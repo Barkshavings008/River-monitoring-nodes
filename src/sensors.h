@@ -1,12 +1,17 @@
 #pragma once
-// Real sensor hardware: pH module, STJF TDS Meter V1.0, TSW-10 turbidity, DS18B20.
+// Real sensor hardware: pH module, STJF TDS Meter V1.0, TSW-10 turbidity,
+// DS18B20.
 #include "types.h"
 
+// Voltages at the sensor outputs (divider already undone).
 struct SensorVoltages {
-  float ph, tds, turbidity;   // at the sensor output (divider already undone)
-  float tempC;
+    float ph;
+    float tds;
+    float turbidity;
+    float tempC;
 };
 
+// Sets up the ADC and the temperature sensor.
 void sensorsBegin();
 
 // One 2 s sample, converted to units and temperature corrected.
