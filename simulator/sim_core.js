@@ -131,16 +131,18 @@ function phFromAlkalinity(alk, ct) {
 
 // Waste types. strength scales how much acid/alkali is behind the pH (mine
 // water carries dissolved iron and aluminium that act like extra acid).
-// ct = dissolved carbonate in mmol/L, nutrient = how much it feeds algae.
+// ct = dissolved carbonate in mmol/L, acid = extra acidity in meq/L (ammonium
+// turning into nitrate releases acid), nutrient = how much it feeds algae.
 const WASTE_TYPES = {
     mine:     { name: "Mine: acid drainage",       ph: 2.8,  tds: 3000,  ntu: 40,  temp: null, strength: 8,  ct: 0,   nutrient: 0,   flow: 250 },
-    sewage:   { name: "Sewage treatment works",    ph: 7.0,  tds: 600,   ntu: 150, temp: 21,   strength: 1,  ct: 6,   nutrient: 0.03, flow: 1000 },
+    sewage:   { name: "Sewage overflow (untreated)", ph: 7.0, tds: 600,  ntu: 150, temp: 21,   strength: 1,  ct: 6,   nutrient: 0.03, flow: 1000 },
+    treated:  { name: "Treated sewage effluent",   ph: 6.6,  tds: 800,   ntu: 4,   temp: 20,   strength: 1,  ct: 3,   acid: 0.5, nutrient: 0.05, flow: 600 },
     concrete: { name: "Concrete plant washwater",  ph: 12.0, tds: 2500,  ntu: 150, temp: null, strength: 1,  ct: 0,   nutrient: 0,   flow: 250 },
     chemical: { name: "Chemical plant: acid",      ph: 2.5,  tds: 4000,  ntu: 20,  temp: 35,   strength: 6,  ct: 0,   nutrient: 0,   flow: 400 },
     power:    { name: "Power station cooling",     ph: 7.4,  tds: 260,   ntu: 6,   temp: 38,   strength: 1,  ct: 1.2, nutrient: 0,   flow: 800 },
     quarry:   { name: "Quarry / land clearing",    ph: 7.4,  tds: 240,   ntu: 900, temp: null, strength: 1,  ct: 1.2, nutrient: 0,   flow: 300 },
     brine:    { name: "Desalination brine",        ph: 7.8,  tds: 40000, ntu: 3,   temp: null, strength: 1,  ct: 2,   nutrient: 0,   flow: 250 },
-    farm:     { name: "Farm fertiliser runoff",    ph: 7.3,  tds: 700,   ntu: 30,  temp: null, strength: 1,  ct: 1.5, nutrient: 1,   flow: 300 },
+    farm:     { name: "Farm fertiliser runoff",    ph: 6.0,  tds: 700,   ntu: 12,  temp: null, strength: 1,  ct: 0.5, acid: 3, nutrient: 1, flow: 300 },
 };
 
 // ---------------------------------------------------------------- The river
@@ -357,20 +359,22 @@ class River {
             wasteFraction += f;
             const e = fac.waste;
             const eAlk = alkalinityAt(e.ph, e.ct / 1000) +
-                (e.strength - 1) * (KW / Math.pow(10, -e.ph) - Math.pow(10, -e.ph));
+                (e.strength - 1) * (KW / Math.pow(10, -e.ph) - Math.pow(10, -e.ph)) -
+                (e.acid || 0) / 1000;
             w.tds += f * e.tds;
             w.alk += f * eAlk;
             w.ct += f * e.ct / 1000;
             w.ntu += s * e.ntu - f * bg.ntu;
             if (e.temp !== null && e.temp !== undefined) w.temp += h * (e.temp - fac.riverTemp);
-            w.nutrient += f * e.nutrient;
+            w.nutrient += f * e.nutrient * fac.algae;   // algae take time to grow
         });
         const clean = Math.max(0, 1 - wasteFraction);
         w.tds += clean * bg.tds;
         w.alk += clean * bg.alk;
         w.ct += clean * bg.ct;
         w.ph = phFromAlkalinity(w.alk, w.ct);
-        // Algae fed by nutrients push the pH up by day and down at night
+        // Algae fed by nutrients push the pH up by day and down at night (the
+        // bloom builds up over about a day after the nutrients start arriving)
         const swing = 0.04 + Math.min(1.0, w.nutrient * 20);
         w.ph += swing * Math.sin((hour - 9) / 24 * 2 * Math.PI);
         w.ntu = Math.max(0, w.ntu);
@@ -430,7 +434,7 @@ class Simulation {
         this.factories = layout.factories.map((f) => {
             const waste = { ...WASTE_TYPES[f.type] };
             return { name: f.name, branch: f.branch, x: f.x, type: f.type, waste, flowLps: waste.flow,
-                     on: false, startedMin: null, riverTemp: 16, firstSeen: {} };
+                     on: false, startedMin: null, riverTemp: 16, firstSeen: {}, algae: 0 };
         });
         this.river.setTracers(this.factories.length);
         this.code.reset();
@@ -552,6 +556,11 @@ class Simulation {
         const rain = this.rain;
         const hour = this.hour;
         this.river.step(this.factories, rain);
+        // Algae bloom grows while nutrients keep coming (about 12 h to build), dies back after
+        for (const fac of this.factories) {
+            if (fac.on && fac.waste.nutrient > 0) fac.algae += (1 - fac.algae) * (1 - Math.exp(-1 / 720));
+            else fac.algae *= Math.exp(-1 / 720);
+        }
         const uptime = (this.minute + 1) * 60;
         const nowMin = this.minute + 1;
 

@@ -125,6 +125,29 @@ void test_salt(void) {
     TEST_ASSERT_TRUE(has_label(out, LBL_SALT, NULL));
 }
 
+void test_effluent_clear_water_ph_drop_tds_rise(void) {
+    // Normal is pH 7.2, TDS 210, 8.1 NTU, 17.1 C
+    struct Rule_output out = evaluate_rules(make_inputs(6.85f, 260.0f, 8.5f, 17.2f));
+    TEST_ASSERT_TRUE(has_label(out, LBL_EFFLUENT, NULL));
+    TEST_ASSERT_FALSE(has_label(out, LBL_SEWAGE, NULL));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.75f, rule_effluent(make_inputs(6.85f, 260.0f, 8.5f, 17.2f)).confidence);
+    // A slight warm-up adds confidence
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, rule_effluent(make_inputs(6.85f, 260.0f, 8.5f, 18.0f)).confidence);
+}
+
+void test_effluent_not_when_muddy_or_ph_steady(void) {
+    // Muddy: that's the sewage rule instead
+    struct Rule_output muddy = evaluate_rules(make_inputs(6.85f, 280.0f, 20.0f, 17.2f));
+    TEST_ASSERT_FALSE(has_label(muddy, LBL_EFFLUENT, NULL));
+    TEST_ASSERT_TRUE(has_label(muddy, LBL_SEWAGE, NULL));
+    // pH didn't drop
+    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(7.15f, 260.0f, 8.5f, 17.2f)).id);
+    // Only a small TDS rise
+    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(6.85f, 220.0f, 8.5f, 17.2f)).id);
+    // Big pH drop is acid, not this
+    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(5.8f, 260.0f, 8.5f, 17.2f)).id);
+}
+
 void test_nutrients_needs_day_range(void) {
     struct Rule_inputs in = make_inputs(8.0f, 245.0f, 8.1f, 26.0f);
     TEST_ASSERT_EQUAL(LBL_NONE, rule_nutrients(in).id);
@@ -207,6 +230,8 @@ int main(void) {
     RUN_TEST(test_sewage);
     RUN_TEST(test_thermal);
     RUN_TEST(test_salt);
+    RUN_TEST(test_effluent_clear_water_ph_drop_tds_rise);
+    RUN_TEST(test_effluent_not_when_muddy_or_ph_steady);
     RUN_TEST(test_nutrients_needs_day_range);
     RUN_TEST(test_fault_range_and_no_reading);
     RUN_TEST(test_fault_temp_jump);

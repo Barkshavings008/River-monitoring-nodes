@@ -382,10 +382,11 @@ async function start() {
     requestAnimationFrame(frame);
 }
 
-// Two hours of clean water so every node has learned "normal", then (first
-// time only) the mine starts so there's something to see straight away
+// 14 hours of clean water so every node has learned "normal" (and has the
+// 12 h of pH history the nutrients rule needs), then (first time only) the
+// mine starts so there's something to see straight away
 function warmUp(firstTime) {
-    for (let i = 0; i < 120; i++) sim.tick();
+    for (let i = 0; i < 14 * 60; i++) sim.tick();
     sim.log = [];
     sim.addLog("user", "Nodes finished learning normal levels");
     if (firstTime) {
@@ -764,7 +765,8 @@ function renderFactories() {
         } else {
             note += " Not discharging.";
         }
-        if (fac.type === "farm") note += " Nutrient alerts need 12 h of clean readings first, then show over the next day-night cycle (use Skip 12 h).";
+        if (fac.type === "farm") note += " Shows up as effluent / fertiliser first. As algae bloom over the next day, a nutrients alert follows (use Skip 12 h).";
+        if (fac.type === "treated") note += " Clear water, so the sewage rule (which needs muddy water) won't fire. The effluent / fertiliser rule catches it.";
         $(`fac-note-${k}`).innerHTML = note;
     });
 }
