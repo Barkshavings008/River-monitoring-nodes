@@ -95,6 +95,14 @@
 #define DRIFT_PH_LIMIT 0.5f
 #define DRIFT_OTHER_TOL 0.10f
 #define STEP_WINDOW_MIN 30              // window for the industrial step change
+// After a pattern or alert ends, keep "normal" frozen this long, so an alert
+// that keeps switching on and off doesn't slowly teach the node that the
+// polluted water is normal
+#if DEMO_MODE
+#define BASELINE_HOLD_MIN 10
+#else
+#define BASELINE_HOLD_MIN (3 * 60)
+#endif
 
 /////////////////////////
 ///////// FAULTS ////////
