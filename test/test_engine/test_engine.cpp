@@ -119,6 +119,41 @@ void test_engine_simulated_scenario(void) {
     TEST_ASSERT_EQUAL(ST_NORMAL, report.state);
 }
 
+// A pattern that keeps coming and going must not leak into "normal"
+void test_baseline_held_after_pattern_clears(void) {
+    engine_begin(&engine, "N1");
+    struct Alert_event events[MAX_TEST_EVENTS];
+    struct Node_report report;
+    unsigned long m = 0;
+    // Learn clean water
+    for (; m < BASELINE_MIN_MINUTES + 5; m++) {
+        for (int k = 0; k < SIM_SAMPLES_PER_MIN; k++) {
+            struct Reading r = sim_reading(SIM_LOCAL, 0, k);
+            engine_add_sample(&engine, r);
+        }
+        engine_close_minute(&engine, m * 60, &report, events, MAX_TEST_EVENTS);
+    }
+    float clean_tds = engine.baseline.median[S_TDS];
+    // 3 minutes of salty water (a pattern), then 1 minute that looks clean-ish
+    // but still has extra TDS, repeated: the extra TDS must not be learned
+    for (int cycle = 0; cycle < 6; cycle++) {
+        for (int i = 0; i < 4; i++, m++) {
+            for (int k = 0; k < SIM_SAMPLES_PER_MIN; k++) {
+                struct Reading r = sim_reading(SIM_LOCAL, 0, k);
+                if (i < 3) {
+                    r.value[S_TDS] = 1800.0f;      // salt rule fires
+                } else {
+                    r.value[S_TDS] *= 1.08f;       // no rule fires
+                }
+                engine_add_sample(&engine, r);
+            }
+            engine_close_minute(&engine, m * 60, &report, events, MAX_TEST_EVENTS);
+        }
+    }
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, clean_tds, engine.baseline.median[S_TDS]);
+    TEST_ASSERT_TRUE(engine.hold_minutes_left > 0);
+}
+
 void test_engine_temp_sensor_missing_is_fault(void) {
     engine_begin(&engine, "N1");
     struct Node_report report;
@@ -141,6 +176,7 @@ int main(void) {
     RUN_TEST(test_baseline_warmup_and_freeze);
     RUN_TEST(test_persistence_needs_three_minutes_on_five_off);
     RUN_TEST(test_engine_simulated_scenario);
+    RUN_TEST(test_baseline_held_after_pattern_clears);
     RUN_TEST(test_engine_temp_sensor_missing_is_fault);
     return UNITY_END();
 }
