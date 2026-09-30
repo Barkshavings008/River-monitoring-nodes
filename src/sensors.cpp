@@ -38,7 +38,7 @@ struct Reading read_sensors(void) {
     last_volts.turbidity = read_volts(TURBIDITY_PIN, TURBIDITY_DIVIDER_RATIO);
     last_volts.temp_c = temp;
 
-    reading.value[S_PH] = ph_from_voltage(last_volts.ph);
+    reading.value[S_PH] = ph_from_voltage(last_volts.ph, correction_temp);
     reading.value[S_TDS] = tds_from_voltage(last_volts.tds, correction_temp);
     reading.value[S_NTU] = ntu_from_voltage(last_volts.turbidity);
     reading.valid[S_PH] = true;

@@ -69,6 +69,7 @@
 
 #define PH_V7 2.50f            // module output in pH 7.0 buffer (after undoing the divider)
 #define PH_V4 3.05f            // module output in pH 4.0 buffer
+#define PH_CALIBRATION_TEMP_C 25.0f // water temp the two buffers were measured at
 
 #define TURB_V_CLEAR 4.20f        // TSW-10 output in clear water (measure your own)
 #define TURB_V_CURVE_CLEAR 4.20f  // clear water voltage the NTU curve was made for

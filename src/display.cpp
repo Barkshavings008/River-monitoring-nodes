@@ -185,7 +185,7 @@ void print_voltages(struct Sensor_voltages volts) {
     Serial.print(" V | temp ");
     print_float(volts.temp_c, 2);
     Serial.println(" C");
-    Serial.println("  Set PH_V7 / PH_V4 (in buffers) and TURB_V_CLEAR (clear water) in config.h");
+    Serial.println("  Set PH_V7 / PH_V4 (in buffers, plus PH_CALIBRATION_TEMP_C) and TURB_V_CLEAR (clear water) in config.h");
 }
 
 /////////////////////////

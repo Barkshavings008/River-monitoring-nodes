@@ -48,10 +48,16 @@ float tds_from_voltage(float volts, float temp_c) {
     return tds;
 }
 
-// Straight line through (PH_V7, 7.0) and (PH_V4, 4.0). The spec's
-// "(V_pH7 - V)" version has the sign flipped (it gives 10.0 at V_pH4).
-float ph_from_voltage(float volts) {
-    return 7.0f + (volts - PH_V7) * 3.0f / (PH_V7 - PH_V4);
+// Straight line through (PH_V7, 7.0) and (PH_V4, 4.0), measured at
+// PH_CALIBRATION_TEMP_C. The spec's "(V_pH7 - V)" version has the sign
+// flipped (it gives 10.0 at V_pH4).
+// The probe's voltage per pH step (Nernst slope, ~59 mV at 25 C) grows with
+// temperature in kelvin, so the slope gets scaled to the water temp. pH 7
+// gives the same voltage at any temperature, so that point doesn't move.
+float ph_from_voltage(float volts, float temp_c) {
+    float slope = 3.0f / (PH_V7 - PH_V4);   // pH per volt at the calibration temp
+    float temp_scale = (PH_CALIBRATION_TEMP_C + 273.15f) / (temp_c + 273.15f);
+    return 7.0f + (volts - PH_V7) * slope * temp_scale;
 }
 
 // TSW-10 turbidity: scale to the clear water voltage, use the curve, then

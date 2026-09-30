@@ -185,8 +185,13 @@ void test_conversions(void) {
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 367.47f, tds_from_voltage(1.0f, 25.0f));
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 306.23f, tds_from_voltage(1.0f, 35.0f));
 
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f, ph_from_voltage(PH_V7));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 4.0f, ph_from_voltage(PH_V4));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f, ph_from_voltage(PH_V7, PH_CALIBRATION_TEMP_C));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 4.0f, ph_from_voltage(PH_V4, PH_CALIBRATION_TEMP_C));
+    // Same voltage in colder / warmer water: pH 7 doesn't move, the rest
+    // scales with the Nernst slope (kelvin ratio)
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f, ph_from_voltage(PH_V7, 5.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f - 3.0f * 298.15f / 278.15f, ph_from_voltage(PH_V4, 5.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f - 3.0f * 298.15f / 308.15f, ph_from_voltage(PH_V4, 35.0f));
 
     TEST_ASSERT_TRUE(ntu_from_voltage(TURB_V_CLEAR) < 2.0f);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, TURB_MAX_NTU, ntu_from_voltage(2.0f));
