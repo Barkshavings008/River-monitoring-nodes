@@ -195,6 +195,9 @@
 #define NODE_ID_LEN 8
 #define NODE_PLACE_LEN 20
 #define NODE_STALE_MIN 3    // a node is ignored if it hasn't reported for this long
+#define MAX_BRANCHES 8      // separate streams / rivers in the network
+#define BRANCH_NAME_LEN 12
+#define MAIN_BRANCH "main"  // branch used when a node is added without naming one
 
 /////////////////////////
 //////// DISPLAY ////////

@@ -135,11 +135,16 @@ void print_network_list(struct River_network *network, unsigned long now_min) {
 
     for (int p = 0; p < network_position_count(network); p++) {
         unsigned long distance = network_position_distance(network, p);
+        int branch = network_position_branch(network, p);
         int indexes[MAX_NODES];
-        int n = network_nodes_at(network, distance, indexes, MAX_NODES);
+        int n = network_nodes_at(network, branch, distance, indexes, MAX_NODES);
         Serial.print("  Position ");
         Serial.print((unsigned long)(p + 1));
         Serial.print(" @ ");
+        if (network->num_branches > 1) {
+            Serial.print(network->branches[branch].name);
+            Serial.print(" ");
+        }
         Serial.print(distance);
         Serial.print(" m:");
 
@@ -311,6 +316,8 @@ const char *finding_code(enum Net_finding finding) {
         return "RAIN_CONFIRMED";
     } else if (finding == NF_RAIN_UNCONFIRMED) {
         return "RAIN_UNCONFIRMED";
+    } else if (finding == NF_NO_UPSTREAM) {
+        return "NO_UPSTREAM";
     } else {
         return "NONE";
     }
@@ -337,10 +344,21 @@ void label_code(struct Node_report report, char *buffer, int size) {
 }
 
 // Writes a sentence about what the network comparison found into buffer
-// (empty if there's nothing to say)
+// (empty if there's nothing to say). Places look like "N0 (1000 m)", or
+// "N0 (stream_a 800 m)" when the network has more than one branch.
 void finding_text(struct Network_assessment a, char *buffer, int size) {
-    unsigned up = (unsigned)a.upstream_distance;
-    unsigned here = (unsigned)a.local_distance;
+    char here[32];      // where this node is
+    char local[48];     // this node and where it is
+    char upstream[48];  // the upstream node and where it is
+    if (a.branched) {
+        snprintf(here, 32, "%s %u m", a.local_branch, (unsigned)a.local_distance);
+        snprintf(upstream, 48, "%s (%s %u m)", a.upstream_id, a.upstream_branch,
+                 (unsigned)a.upstream_distance);
+    } else {
+        snprintf(here, 32, "%u m", (unsigned)a.local_distance);
+        snprintf(upstream, 48, "%s (%u m)", a.upstream_id, (unsigned)a.upstream_distance);
+    }
+    snprintf(local, 48, "%s (%s)", a.local_id, here);
     unsigned rain_nodes = (unsigned)a.rain_peers + 1;
     unsigned all_nodes = (unsigned)a.peers + 1;
 
@@ -348,29 +366,41 @@ void finding_text(struct Network_assessment a, char *buffer, int size) {
         snprintf(buffer, size, "No fresh data from other nodes - cannot compare.");
     } else if (a.finding == NF_SOURCE_LOCAL_SIDE) {
         if (a.has_upstream) {
-            snprintf(buffer, size, "Source likely between %s (%u m) and %s (%u m), on %s's side - "
-                     "other node(s) at this position are normal.",
-                     a.upstream_id, up, a.local_id, here, a.local_id);
+            snprintf(buffer, size, "Source likely between %s and %s, on %s's side - "
+                     "other node(s) at this position are normal.", upstream, local, a.local_id);
         } else {
-            snprintf(buffer, size, "Source likely on %s's side at %u m - other node(s) here are normal.",
+            snprintf(buffer, size, "Source likely on %s's side at %s - other node(s) here are normal.",
                      a.local_id, here);
         }
     } else if (a.finding == NF_SOURCE_CROSS_SECTION) {
         if (a.has_upstream) {
-            snprintf(buffer, size, "Whole river width affected at %u m; source likely between %s (%u m) "
-                     "and here.", here, a.upstream_id, up);
+            snprintf(buffer, size, "Whole river width affected at %s; source likely between %s "
+                     "and here.", here, upstream);
         } else {
-            snprintf(buffer, size, "Whole river width affected at %u m.", here);
+            snprintf(buffer, size, "Whole river width affected at %s.", here);
         }
     } else if (a.finding == NF_SOURCE_BETWEEN) {
-        snprintf(buffer, size, "Source likely between %s (%u m) and %s (%u m) - upstream is normal.",
-                 a.upstream_id, up, a.local_id, here);
+        if (a.num_upstream > 1) {
+            snprintf(buffer, size, "Source likely between %s and the nearest upstream nodes (%s) - "
+                     "all of them are normal.", local, a.upstream_list);
+        } else {
+            snprintf(buffer, size, "Source likely between %s and %s - upstream is normal.",
+                     upstream, local);
+        }
     } else if (a.finding == NF_FROM_UPSTREAM) {
-        snprintf(buffer, size, "Same pattern upstream at %s (%u m) - pollution is coming from further "
-                 "upstream.", a.upstream_id, up);
+        if (a.branched && a.upstream_gap_m >= 0) {
+            snprintf(buffer, size, "Same pattern upstream at %s, %ld m up the river - pollution is "
+                     "coming from further upstream.", upstream, a.upstream_gap_m);
+        } else {
+            snprintf(buffer, size, "Same pattern upstream at %s - pollution is coming from further "
+                     "upstream.", upstream);
+        }
     } else if (a.finding == NF_RAIN_CONFIRMED) {
         snprintf(buffer, size, "Rain pattern at %u of %u nodes - confirmed weather event.",
                  rain_nodes, all_nodes);
+    } else if (a.finding == NF_NO_UPSTREAM) {
+        snprintf(buffer, size, "No nodes upstream of %s to compare with - the source is somewhere "
+                 "above it.", a.local_id);
     } else if (a.finding == NF_RAIN_UNCONFIRMED) {
         snprintf(buffer, size, "Rain pattern at this node only (%u of %u) - possible stormwater outfall "
                  "or leak nearby.", rain_nodes, all_nodes);
@@ -618,10 +648,7 @@ void print_disclaimer(void) {
 void print_network(struct Node_report report, struct Network_assessment a,
     struct River_network *network, unsigned long now_min) {
     int local_index = network_find_node(network, report.id);
-    unsigned long local_distance = 0;
-    if (local_index >= 0) {
-        local_distance = network->nodes[local_index].distance_m;
-    }
+    bool branched = network->num_branches > 1;
 
     Serial.println("Network (upstream -> downstream):");
     for (int i = 0; i < network->num_nodes; i++) {
@@ -632,7 +659,8 @@ void print_network(struct Node_report report, struct Network_assessment a,
         const char *tag = "";
         if (node->is_local) {
             tag = "  <- this node";
-        } else if (node->distance_m == local_distance) {
+        } else if (local_index >= 0 && node->branch == network->nodes[local_index].branch &&
+                   node->distance_m == network->nodes[local_index].distance_m) {
             tag = "  <- same position";
         }
 
@@ -646,6 +674,9 @@ void print_network(struct Node_report report, struct Network_assessment a,
         Serial.print(" ");
         print_right_aligned(node->distance_m, 6);
         Serial.print("m  ");
+        if (branched) {
+            print_padded(network->branches[node->branch].name, BRANCH_NAME_LEN);
+        }
         print_padded(node->place, 12);
         Serial.print(" ");
         Serial.print(status_colour);
@@ -654,8 +685,8 @@ void print_network(struct Node_report report, struct Network_assessment a,
         Serial.println(tag);
     }
 
-    char text[160];
-    finding_text(a, text, 160);
+    char text[220];
+    finding_text(a, text, 220);
     if (text[0] != '\0') {
         Serial.print(finding_colour(a.finding));
         print_wrapped("  >> ", text, DISPLAY_WIDTH - 5);
@@ -750,6 +781,11 @@ void print_json(struct Node_report report, struct Network_assessment a) {
     Serial.print(report.id);
     Serial.print("\",\"pos\":");
     Serial.print(a.local_distance);
+    if (a.branched) {
+        Serial.print(",\"branch\":\"");
+        Serial.print(a.local_branch);
+        Serial.print("\"");
+    }
     Serial.print(",\"t\":");
     Serial.print(report.time_sec);
     Serial.print(",\"state\":\"");
