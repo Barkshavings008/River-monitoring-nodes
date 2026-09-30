@@ -1,47 +1,86 @@
 #include "commands.h"
-#include "config.h"
 #include "display.h"
 #include "sensors.h"
 #include <Arduino.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define LINE_SIZE 80
-#define MSG_SIZE 96
+#define COMMAND_LINE_SIZE 80
+#define MESSAGE_SIZE 96
 
-namespace {
+char command_line[COMMAND_LINE_SIZE];  // the command being typed in
+int command_length = 0;
 
-char line[LINE_SIZE];
-uint8_t len = 0;
+////////////////////////
+// Function prototypes//
+////////////////////////
+void run_command(char *command, struct River_network *network, unsigned long now_min);
+void add_command(struct River_network *network, unsigned long now_min);
+void del_command(struct River_network *network, unsigned long now_min);
+void move_command(struct River_network *network, unsigned long now_min);
+bool read_metres(const char *text, unsigned long *metres);
+////////////////////////
 
-// Reads a whole number of metres from s into out.
-// Returns false if s is empty or is not a number.
-bool parseMetres(const char *s, uint32_t &out) {
-    if (s == NULL || s[0] == '\0') {
-        return false;
+// Reads whatever has been typed into the serial monitor. Once a whole line
+// (ending in Enter) has come in, it gets run.
+void check_serial_commands(struct River_network *network, unsigned long now_min) {
+    while (Serial.available()) {
+        char c = Serial.read();
+        if (c == '\n') {
+            command_line[command_length] = '\0';
+            run_command(command_line, network, now_min);
+            command_length = 0;
+        } else if (c != '\r' && command_length < COMMAND_LINE_SIZE - 1) {
+            command_line[command_length] = c;
+            command_length++;
+        }
     }
-    char *end;
-    unsigned long v = strtoul(s, &end, 10);
-    if (end[0] != '\0') {
-        return false;
-    }
-    out = v;
-    return true;
 }
 
-// add <id> <metres> [place]
-void handleAdd(RiverNetwork &net, uint32_t nowMin) {
-    char msg[MSG_SIZE];
-    char *id = strtok(NULL, " ");
-    char *dist = strtok(NULL, " ");
-    char *place = strtok(NULL, "");
-    uint32_t m;
-    if (id == NULL || !parseMetres(dist, m)) {
-        displayMessage("Usage: add <id> <metres> [place]");
+/////////////////////////
+// Function definitions//
+/////////////////////////
+
+// strtok() splits the line up into words. The first call gets the command
+// word, then each strtok(NULL, ...) call in the other functions gets the next word.
+void run_command(char *command, struct River_network *network, unsigned long now_min) {
+    char *word = strtok(command, " ");
+    if (word == NULL) {
         return;
     }
 
-    // Skip leading spaces and quotes, and cut the place at a closing quote.
+    if (strcmp(word, "list") == 0) {
+        print_network_list(network, now_min);
+    } else if (strcmp(word, "add") == 0) {
+        add_command(network, now_min);
+    } else if (strcmp(word, "del") == 0) {
+        del_command(network, now_min);
+    } else if (strcmp(word, "move") == 0) {
+        move_command(network, now_min);
+    } else if (strcmp(word, "cal") == 0) {
+        if (SIMULATE) {
+            print_message("cal: not available in SIMULATE mode");
+        } else {
+            print_voltages(last_sensor_voltages());
+        }
+    } else {
+        print_help();
+    }
+}
+
+// add <id> <metres> [place]
+void add_command(struct River_network *network, unsigned long now_min) {
+    char message[MESSAGE_SIZE];
+    char *id = strtok(NULL, " ");
+    char *distance = strtok(NULL, " ");
+    char *place = strtok(NULL, "");   // "" = the rest of the line
+    unsigned long metres;
+    if (id == NULL || !read_metres(distance, &metres)) {
+        print_message("Usage: add <id> <metres> [place]");
+        return;
+    }
+
+    // Skip spaces and quotes at the start, and cut the place off at a closing quote
     if (place != NULL) {
         while (place[0] == ' ' || place[0] == '"') {
             place++;
@@ -51,97 +90,68 @@ void handleAdd(RiverNetwork &net, uint32_t nowMin) {
             quote[0] = '\0';
         }
     }
-    const char *placeName = "added";
+    const char *place_name = "added";
     if (place != NULL && place[0] != '\0') {
-        placeName = place;
+        place_name = place;
     }
 
-    if (net.addNode(id, m, placeName, false)) {
-        snprintf(msg, sizeof(msg), "Added %s at %u m", id, (unsigned)m);
+    if (network_add_node(network, id, metres, place_name, false)) {
+        snprintf(message, MESSAGE_SIZE, "Added %s at %u m", id, (unsigned)metres);
     } else {
-        snprintf(msg, sizeof(msg),
-                 "Could not add %s (duplicate id or network full)", id);
+        snprintf(message, MESSAGE_SIZE, "Could not add %s (duplicate id or network full)", id);
     }
-    displayMessage(msg);
-    displayNetworkList(net, nowMin);
+    print_message(message);
+    print_network_list(network, now_min);
 }
 
 // del <id>
-void handleDel(RiverNetwork &net, uint32_t nowMin) {
-    char msg[MSG_SIZE];
+void del_command(struct River_network *network, unsigned long now_min) {
+    char message[MESSAGE_SIZE];
     char *id = strtok(NULL, " ");
-    int i = net.indexOf(id);
-    if (i < 0) {
-        displayMessage("Unknown node");
+    int index = network_find_node(network, id);
+    if (index < 0) {
+        print_message("Unknown node");
         return;
     }
-    if (net.at(i).isLocal) {
-        displayMessage("Cannot delete this board's own node");
+    if (network->nodes[index].is_local) {
+        print_message("Cannot delete this board's own node");
         return;
     }
-    net.removeNode(id);
-    snprintf(msg, sizeof(msg), "Deleted %s", id);
-    displayMessage(msg);
-    displayNetworkList(net, nowMin);
+    network_remove_node(network, id);
+    snprintf(message, MESSAGE_SIZE, "Deleted %s", id);
+    print_message(message);
+    print_network_list(network, now_min);
 }
 
 // move <id> <metres>
-void handleMove(RiverNetwork &net, uint32_t nowMin) {
-    char msg[MSG_SIZE];
+void move_command(struct River_network *network, unsigned long now_min) {
+    char message[MESSAGE_SIZE];
     char *id = strtok(NULL, " ");
-    char *dist = strtok(NULL, " ");
-    uint32_t m;
-    if (id == NULL || !parseMetres(dist, m)) {
-        displayMessage("Usage: move <id> <metres>");
+    char *distance = strtok(NULL, " ");
+    unsigned long metres;
+    if (id == NULL || !read_metres(distance, &metres)) {
+        print_message("Usage: move <id> <metres>");
         return;
     }
-    if (net.divertNode(id, m)) {
-        snprintf(msg, sizeof(msg), "Moved %s to %u m", id, (unsigned)m);
+    if (network_move_node(network, id, metres)) {
+        snprintf(message, MESSAGE_SIZE, "Moved %s to %u m", id, (unsigned)metres);
     } else {
-        snprintf(msg, sizeof(msg), "Unknown node %s", id);
+        snprintf(message, MESSAGE_SIZE, "Unknown node %s", id);
     }
-    displayMessage(msg);
-    displayNetworkList(net, nowMin);
+    print_message(message);
+    print_network_list(network, now_min);
 }
 
-// Runs one command line.
-void handle(char *cmd, RiverNetwork &net, uint32_t nowMin) {
-    char *verb = strtok(cmd, " ");
-    if (verb == NULL) {
-        return;
+// Turns text like "1500" into a number. Returns false if it's empty or not a number.
+bool read_metres(const char *text, unsigned long *metres) {
+    if (text == NULL || text[0] == '\0') {
+        return false;
     }
-
-    if (strcmp(verb, "list") == 0) {
-        displayNetworkList(net, nowMin);
-    } else if (strcmp(verb, "add") == 0) {
-        handleAdd(net, nowMin);
-    } else if (strcmp(verb, "del") == 0) {
-        handleDel(net, nowMin);
-    } else if (strcmp(verb, "move") == 0) {
-        handleMove(net, nowMin);
-    } else if (strcmp(verb, "cal") == 0) {
-        if (SIMULATE) {
-            displayMessage("cal: not available in SIMULATE mode");
-        } else {
-            displayVoltages(sensorsLastVoltages());
-        }
-    } else {
-        displayHelp();
+    char *end;
+    unsigned long value = strtoul(text, &end, 10); // end points to the first char that wasn't a digit
+    if (end[0] != '\0') {
+        return false;
     }
-}
-
-}  // namespace
-
-void commandsPoll(RiverNetwork &net, uint32_t nowMin) {
-    while (Serial.available()) {
-        char c = Serial.read();
-        if (c == '\n') {
-            line[len] = '\0';
-            handle(line, net, nowMin);
-            len = 0;
-        } else if (c != '\r' && len < sizeof(line) - 1) {
-            line[len] = c;
-            len++;
-        }
-    }
+    *metres = value;
+    return true;
 }

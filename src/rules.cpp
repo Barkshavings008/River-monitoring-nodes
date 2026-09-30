@@ -1,299 +1,338 @@
 #include "rules.h"
-#include "config.h"
 #include <math.h>
 
-namespace {
-
-// Tallies required/optional conditions for one rule (section 6 confidence).
+// Keeps count of a rule's required and optional conditions (section 6 confidence)
 struct Score {
-    uint8_t matched = 0;
-    uint8_t total = 0;
-    uint8_t strong = 0;
-    bool requiredOk = true;
-
-    // A condition that must be true for the rule to fire.
-    void req(bool c) {
-        total++;
-        if (c) {
-            matched++;
-        } else {
-            requiredOk = false;
-        }
-    }
-
-    // A condition that only adds to the confidence.
-    void opt(bool c) {
-        total++;
-        if (c) {
-            matched++;
-        }
-    }
-
-    // A very strong sign: adds STRONG_BONUS to the confidence.
-    void strongIf(bool c) {
-        if (c) {
-            strong++;
-        }
-    }
-
-    // Returns the label with its confidence, or LBL_NONE if a required
-    // condition failed.
-    RuleResult result(LabelId id) const {
-        RuleResult r = { LBL_NONE, 0.0f };
-        if (!requiredOk || total == 0) {
-            return r;
-        }
-        float c = (float)matched / total + STRONG_BONUS * strong;
-        if (c > 1.0f) {
-            c = 1.0f;
-        }
-        r.id = id;
-        r.conf = c;
-        return r;
-    }
+    int matched;
+    int total;
+    int strong;
+    bool required_ok;
 };
 
-// Baseline of sensor s, raised to a floor so it is safe to divide by.
-float baseOf(const RuleInputs &in, uint8_t s) {
-    float b = in.base[s];
-    if (s == S_TDS && b < BASE_FLOOR_TDS) {
-        b = BASE_FLOOR_TDS;
-    }
-    if (s == S_NTU && b < BASE_FLOOR_NTU) {
-        b = BASE_FLOOR_NTU;
-    }
-    return b;
-}
+////////////////////////
+// Function prototypes//
+////////////////////////
+struct Score new_score(void);
+void score_required(struct Score *score, bool condition);
+void score_optional(struct Score *score, bool condition);
+void score_strong(struct Score *score, bool condition);
+struct Rule_result score_result(struct Score score, enum Label_id id);
+float safe_base(struct Rule_inputs in, int sensor);
+float fraction_rise(struct Rule_inputs in, int sensor);
+float times_base(struct Rule_inputs in, int sensor);
+float change_from_base(struct Rule_inputs in, int sensor);
+bool is_between(float value, float low, float high);
+void add_hit(struct Rule_output *out, struct Rule_result result);
+////////////////////////
 
-// Fractional change vs baseline: +0.5 means 50 % above normal.
-float rise(const RuleInputs &in, uint8_t s) {
-    return (in.now[s] - baseOf(in, s)) / baseOf(in, s);
-}
+//////////////////////////
+////// B. RAIN FILTER ////
+//////////////////////////
 
-// How many times the baseline the reading is.
-float ratio(const RuleInputs &in, uint8_t s) {
-    return in.now[s] / baseOf(in, s);
-}
-
-// Reading minus baseline.
-float delta(const RuleInputs &in, uint8_t s) {
-    return in.now[s] - in.base[s];
-}
-
-// True if lo <= v <= hi.
-bool between(float v, float lo, float hi) {
-    return v >= lo && v <= hi;
-}
-
-// Adds r to the output if it fired and there is room.
-void push(RuleOutput &out, RuleResult r) {
-    if (r.id != LBL_NONE && out.n < MAX_RULE_HITS) {
-        out.hits[out.n] = r;
-        out.n++;
-    }
-}
-
-}  // namespace
-
-// ---------------------------------------------------------------- B. Rain
-bool isRainEvent(const RuleInputs &in) {
+bool is_rain_event(struct Rule_inputs in) {
     return in.ok[S_TDS] && in.ok[S_NTU] && in.ok[S_TEMP] &&
-           rise(in, S_TDS) < -RAIN_TDS_DROP &&
-           ratio(in, S_NTU) > RAIN_NTU_RATIO &&
-           delta(in, S_TEMP) < -RAIN_TEMP_DROP;
+           fraction_rise(in, S_TDS) < -RAIN_TDS_DROP &&
+           times_base(in, S_NTU) > RAIN_NTU_RATIO &&
+           change_from_base(in, S_TEMP) < -RAIN_TEMP_DROP;
 }
 
-// ---------------------------------------------------------------- C. Pollution
-RuleResult ruleHeavyMetals(const RuleInputs &in) {
-    Score s;
+//////////////////////////
+////// C. POLLUTION //////
+//////////////////////////
+
+struct Rule_result rule_heavy_metals(struct Rule_inputs in) {
+    struct Score score = new_score();
     float ph = in.now[S_PH];
-    s.req(in.ok[S_PH] && (ph < HM_PH_MAX || -delta(in, S_PH) > HM_PH_DROP));
-    s.req(in.ok[S_TDS] && rise(in, S_TDS) > HM_TDS_RISE);
-    s.opt(in.ok[S_NTU] && ratio(in, S_NTU) > HM_NTU_RATIO);
-    s.strongIf(in.ok[S_PH] && ph < HM_PH_STRONG);
-    return s.result(LBL_HEAVY_METALS);
+    score_required(&score, in.ok[S_PH] && (ph < HM_PH_MAX || -change_from_base(in, S_PH) > HM_PH_DROP));
+    score_required(&score, in.ok[S_TDS] && fraction_rise(in, S_TDS) > HM_TDS_RISE);
+    score_optional(&score, in.ok[S_NTU] && times_base(in, S_NTU) > HM_NTU_RATIO);
+    score_strong(&score, in.ok[S_PH] && ph < HM_PH_STRONG);
+    return score_result(score, LBL_HEAVY_METALS);
 }
 
-RuleResult ruleIndustrial(const RuleInputs &in) {
-    Score s;
+struct Rule_result rule_industrial(struct Rule_inputs in) {
+    struct Score score = new_score();
     float ph = in.now[S_PH];
-    s.req(in.ok[S_PH] && (ph < IND_PH_LOW || ph > IND_PH_HIGH));
-    // Step change: TDS jumped > 30 % within the step window, and is > 30 %
-    // over normal.
-    s.req(in.ok[S_TDS] && in.hasTdsStepRef &&
-          in.now[S_TDS] > in.tdsStepRef * (1.0f + IND_TDS_STEP) &&
-          rise(in, S_TDS) > IND_TDS_STEP);
-    s.opt(in.ok[S_TEMP] && delta(in, S_TEMP) > IND_TEMP_RISE);
-    return s.result(LBL_INDUSTRIAL);
+    score_required(&score, in.ok[S_PH] && (ph < IND_PH_LOW || ph > IND_PH_HIGH));
+    // Step change: TDS jumped > 30 % within the step window, and is > 30 % over normal
+    score_required(&score, in.ok[S_TDS] && in.has_tds_step_ref &&
+                           in.now[S_TDS] > in.tds_step_ref * (1.0f + IND_TDS_STEP) &&
+                           fraction_rise(in, S_TDS) > IND_TDS_STEP);
+    score_optional(&score, in.ok[S_TEMP] && change_from_base(in, S_TEMP) > IND_TEMP_RISE);
+    return score_result(score, LBL_INDUSTRIAL);
 }
 
-RuleResult ruleAlkaline(const RuleInputs &in) {
-    Score s;
+struct Rule_result rule_alkaline(struct Rule_inputs in) {
+    struct Score score = new_score();
     float ph = in.now[S_PH];
-    s.req(in.ok[S_PH] && ph > ALK_PH_MIN);
-    s.req(in.ok[S_TDS] && rise(in, S_TDS) > ALK_TDS_RISE);
-    s.opt(in.ok[S_NTU] && ratio(in, S_NTU) > ALK_NTU_RATIO);
-    s.strongIf(in.ok[S_PH] && ph > ALK_PH_STRONG);
-    return s.result(LBL_ALKALINE);
+    score_required(&score, in.ok[S_PH] && ph > ALK_PH_MIN);
+    score_required(&score, in.ok[S_TDS] && fraction_rise(in, S_TDS) > ALK_TDS_RISE);
+    score_optional(&score, in.ok[S_NTU] && times_base(in, S_NTU) > ALK_NTU_RATIO);
+    score_strong(&score, in.ok[S_PH] && ph > ALK_PH_STRONG);
+    return score_result(score, LBL_ALKALINE);
 }
 
-RuleResult ruleSewage(const RuleInputs &in) {
-    Score s;
-    s.req(in.ok[S_TDS] &&
-          between(rise(in, S_TDS), SEW_TDS_RISE_MIN, SEW_TDS_RISE_MAX));
-    s.req(in.ok[S_NTU] && ratio(in, S_NTU) > SEW_NTU_RATIO);
-    s.opt(in.ok[S_PH] &&
-          between(-delta(in, S_PH), SEW_PH_DROP_MIN, SEW_PH_DROP_MAX));
-    s.opt(in.ok[S_TEMP] &&
-          between(delta(in, S_TEMP), SEW_TEMP_RISE_MIN, SEW_TEMP_RISE_MAX));
-    return s.result(LBL_SEWAGE);
+struct Rule_result rule_sewage(struct Rule_inputs in) {
+    struct Score score = new_score();
+    score_required(&score, in.ok[S_TDS] &&
+                           is_between(fraction_rise(in, S_TDS), SEW_TDS_RISE_MIN, SEW_TDS_RISE_MAX));
+    score_required(&score, in.ok[S_NTU] && times_base(in, S_NTU) > SEW_NTU_RATIO);
+    score_optional(&score, in.ok[S_PH] &&
+                           is_between(-change_from_base(in, S_PH), SEW_PH_DROP_MIN, SEW_PH_DROP_MAX));
+    score_optional(&score, in.ok[S_TEMP] &&
+                           is_between(change_from_base(in, S_TEMP), SEW_TEMP_RISE_MIN, SEW_TEMP_RISE_MAX));
+    return score_result(score, LBL_SEWAGE);
 }
 
-// ---------------------------------------------------------------- D. Watch
-RuleResult ruleNutrients(const RuleInputs &in) {
-    RuleResult none = { LBL_NONE, 0.0f };
-    if (!in.hasDayRange) {
+//////////////////////////
+//////// D. WATCH ////////
+//////////////////////////
+
+struct Rule_result rule_nutrients(struct Rule_inputs in) {
+    if (!in.has_day_range) {
+        struct Rule_result none;
+        none.id = LBL_NONE;
+        none.confidence = 0.0f;
         return none;
     }
-    Score s;
-    // No real-time clock, so "daytime pH > 9" is treated as any pH > 9.
-    float swing = in.phDayMax - in.phDayMin;
-    s.req(in.ok[S_PH] && (swing > NUT_PH_SWING || in.now[S_PH] > NUT_PH_HIGH));
-    s.req(in.ok[S_TDS] &&
-          between(rise(in, S_TDS), NUT_TDS_RISE_MIN, NUT_TDS_RISE_MAX));
-    s.opt(in.ok[S_TEMP] && in.now[S_TEMP] > NUT_TEMP_WARM);
-    return s.result(LBL_NUTRIENTS);
+    struct Score score = new_score();
+    // No real-time clock, so "daytime pH > 9" is treated as any pH > 9
+    float swing = in.ph_day_max - in.ph_day_min;
+    score_required(&score, in.ok[S_PH] && (swing > NUT_PH_SWING || in.now[S_PH] > NUT_PH_HIGH));
+    score_required(&score, in.ok[S_TDS] &&
+                           is_between(fraction_rise(in, S_TDS), NUT_TDS_RISE_MIN, NUT_TDS_RISE_MAX));
+    score_optional(&score, in.ok[S_TEMP] && in.now[S_TEMP] > NUT_TEMP_WARM);
+    return score_result(score, LBL_NUTRIENTS);
 }
 
-RuleResult ruleThermal(const RuleInputs &in) {
-    Score s;
-    s.req(in.ok[S_TEMP] && (delta(in, S_TEMP) > THERM_TEMP_RISE ||
-                            in.now[S_TEMP] > THERM_TEMP_ABS));
-    bool othersNormal =
-        in.ok[S_PH] && fabsf(delta(in, S_PH)) <= THERM_PH_TOL &&
-        in.ok[S_TDS] && fabsf(rise(in, S_TDS)) <= THERM_TDS_TOL &&
-        in.ok[S_NTU] && ratio(in, S_NTU) < THERM_NTU_RATIO;
-    s.req(othersNormal);
-    return s.result(LBL_THERMAL);
+struct Rule_result rule_thermal(struct Rule_inputs in) {
+    struct Score score = new_score();
+    score_required(&score, in.ok[S_TEMP] && (change_from_base(in, S_TEMP) > THERM_TEMP_RISE ||
+                                             in.now[S_TEMP] > THERM_TEMP_ABS));
+    bool others_normal = in.ok[S_PH] && fabsf(change_from_base(in, S_PH)) <= THERM_PH_TOL &&
+                         in.ok[S_TDS] && fabsf(fraction_rise(in, S_TDS)) <= THERM_TDS_TOL &&
+                         in.ok[S_NTU] && times_base(in, S_NTU) < THERM_NTU_RATIO;
+    score_required(&score, others_normal);
+    return score_result(score, LBL_THERMAL);
 }
 
-RuleResult ruleSediment(const RuleInputs &in) {
-    Score s;
-    s.req(in.ok[S_NTU] && (ratio(in, S_NTU) > SED_NTU_RATIO ||
-                           in.now[S_NTU] > SED_NTU_ABS));
-    s.req(in.ok[S_TDS] && fabsf(rise(in, S_TDS)) <= SED_TDS_TOL);
-    s.req(in.ok[S_PH] && fabsf(delta(in, S_PH)) <= SED_PH_TOL);
-    return s.result(LBL_SEDIMENT);
+struct Rule_result rule_sediment(struct Rule_inputs in) {
+    struct Score score = new_score();
+    score_required(&score, in.ok[S_NTU] && (times_base(in, S_NTU) > SED_NTU_RATIO ||
+                                            in.now[S_NTU] > SED_NTU_ABS));
+    score_required(&score, in.ok[S_TDS] && fabsf(fraction_rise(in, S_TDS)) <= SED_TDS_TOL);
+    score_required(&score, in.ok[S_PH] && fabsf(change_from_base(in, S_PH)) <= SED_PH_TOL);
+    return score_result(score, LBL_SEDIMENT);
 }
 
-RuleResult ruleSalt(const RuleInputs &in) {
-    Score s;
-    s.req(in.ok[S_TDS] && in.now[S_TDS] > SALT_TDS_ABS);
-    s.req(in.ok[S_PH] && fabsf(delta(in, S_PH)) <= SALT_PH_TOL);
-    s.req(in.ok[S_NTU] && ratio(in, S_NTU) < SALT_NTU_RATIO);
-    return s.result(LBL_SALT);
+struct Rule_result rule_salt(struct Rule_inputs in) {
+    struct Score score = new_score();
+    score_required(&score, in.ok[S_TDS] && in.now[S_TDS] > SALT_TDS_ABS);
+    score_required(&score, in.ok[S_PH] && fabsf(change_from_base(in, S_PH)) <= SALT_PH_TOL);
+    score_required(&score, in.ok[S_NTU] && times_base(in, S_NTU) < SALT_NTU_RATIO);
+    return score_result(score, LBL_SALT);
 }
 
 // Runs every rule. Rain skips the pollution rules and sediment, because
-// rain alone can explain those readings.
-RuleOutput evaluateRules(const RuleInputs &in) {
-    RuleOutput out;
-    out.n = 0;
-    out.rain = isRainEvent(in);
+// rain by itself explains those readings.
+struct Rule_output evaluate_rules(struct Rule_inputs in) {
+    struct Rule_output out;
+    out.num_hits = 0;
+    out.rain = is_rain_event(in);
 
     if (out.rain) {
-        RuleResult r = { LBL_RAIN, 1.0f };
-        push(out, r);
+        struct Rule_result rain;
+        rain.id = LBL_RAIN;
+        rain.confidence = 1.0f;
+        add_hit(&out, rain);
     } else {
-        push(out, ruleHeavyMetals(in));
-        push(out, ruleIndustrial(in));
-        push(out, ruleAlkaline(in));
-        push(out, ruleSewage(in));
+        add_hit(&out, rule_heavy_metals(in));
+        add_hit(&out, rule_industrial(in));
+        add_hit(&out, rule_alkaline(in));
+        add_hit(&out, rule_sewage(in));
     }
 
-    push(out, ruleNutrients(in));
-    push(out, ruleThermal(in));
+    add_hit(&out, rule_nutrients(in));
+    add_hit(&out, rule_thermal(in));
     if (!out.rain) {
-        push(out, ruleSediment(in));
+        add_hit(&out, rule_sediment(in));
     }
-    push(out, ruleSalt(in));
+    add_hit(&out, rule_salt(in));
     return out;
 }
 
-// ---------------------------------------------------------------- A. Faults
-void FaultTracker::reset() {
-    for (uint8_t s = 0; s < S_COUNT; s++) {
-        ref[s] = 0.0f;
-        run[s] = 0;
-        hasRef[s] = false;
+//////////////////////////
+/////// A. FAULTS ////////
+//////////////////////////
+
+void fault_tracker_reset(struct Fault_tracker *tracker) {
+    for (int s = 0; s < S_COUNT; s++) {
+        tracker->ref[s] = 0.0f;
+        tracker->run[s] = 0;
+        tracker->has_ref[s] = false;
     }
-    prevTemp = 0.0f;
-    hasPrevTemp = false;
+    tracker->prev_temp = 0.0f;
+    tracker->has_prev_temp = false;
 }
 
-// Returns F_OUT_OF_RANGE if reading v is impossible for this sensor.
-FaultCode checkRange(uint8_t sensor, float v) {
-    bool outOfRange = false;
+// F_OUT_OF_RANGE if the value is impossible for that sensor
+enum Fault_code check_range(int sensor, float value) {
+    bool out_of_range = false;
     if (sensor == S_PH) {
-        outOfRange = v < RANGE_PH_MIN || v > RANGE_PH_MAX;
+        out_of_range = value < RANGE_PH_MIN || value > RANGE_PH_MAX;
     } else if (sensor == S_TDS) {
-        outOfRange = v < RANGE_TDS_MIN || v > RANGE_TDS_MAX;
+        out_of_range = value < RANGE_TDS_MIN || value > RANGE_TDS_MAX;
     } else if (sensor == S_NTU) {
-        outOfRange = v > RANGE_NTU_MAX;
+        out_of_range = value > RANGE_NTU_MAX;
     } else if (sensor == S_TEMP) {
-        outOfRange = v < RANGE_TEMP_MIN || v > RANGE_TEMP_MAX;
+        out_of_range = value < RANGE_TEMP_MIN || value > RANGE_TEMP_MAX;
     }
 
-    if (outOfRange) {
+    if (out_of_range) {
         return F_OUT_OF_RANGE;
+    } else {
+        return F_NONE;
     }
-    return F_NONE;
 }
 
-void checkFaults(FaultTracker &ft, const float v[S_COUNT],
-                 const bool valid[S_COUNT], uint8_t out[S_COUNT]) {
-    for (uint8_t s = 0; s < S_COUNT; s++) {
-        out[s] = F_NONE;
+// Writes one Fault_code for each sensor into faults[]
+void check_faults(struct Fault_tracker *tracker, float values[], bool valid[], enum Fault_code faults[]) {
+    for (int s = 0; s < S_COUNT; s++) {
+        faults[s] = F_NONE;
         if (!valid[s]) {
-            out[s] = F_NO_READING;
-            ft.hasRef[s] = false;
-            ft.run[s] = 0;
+            faults[s] = F_NO_READING;
+            tracker->has_ref[s] = false;
+            tracker->run[s] = 0;
         } else {
-            // Flatline: same value (within 0.1 %) for FLATLINE_MIN minutes.
-            float tol = fabsf(ft.ref[s]) * FLATLINE_TOL;
-            if (tol < FLATLINE_ABS_TOL) {
-                tol = FLATLINE_ABS_TOL;
+            // Flatline: same value (within 0.1 %) for FLATLINE_MIN minutes
+            float tolerance = fabsf(tracker->ref[s]) * FLATLINE_TOL;
+            if (tolerance < FLATLINE_ABS_TOL) {
+                tolerance = FLATLINE_ABS_TOL;
             }
-            bool clearWater = s == S_NTU && v[s] <= FLATLINE_NTU_FLOOR;
-            bool same = fabsf(v[s] - ft.ref[s]) <= tol;
-            if (ft.hasRef[s] && !clearWater && same) {
-                if (ft.run[s] < 0xFFFF) {
-                    ft.run[s]++;
+            bool clear_water = s == S_NTU && values[s] <= FLATLINE_NTU_FLOOR;
+            bool same = fabsf(values[s] - tracker->ref[s]) <= tolerance;
+            if (tracker->has_ref[s] && !clear_water && same) {
+                if (tracker->run[s] < 0xFFFF) {
+                    tracker->run[s]++;
                 }
             } else {
-                ft.ref[s] = v[s];
-                ft.hasRef[s] = true;
-                ft.run[s] = 0;
+                tracker->ref[s] = values[s];
+                tracker->has_ref[s] = true;
+                tracker->run[s] = 0;
             }
 
-            FaultCode range = checkRange(s, v[s]);
+            enum Fault_code range = check_range(s, values[s]);
             if (range != F_NONE) {
-                out[s] = range;
-            } else if (ft.run[s] >= FLATLINE_MIN) {
-                out[s] = F_FLATLINE;
+                faults[s] = range;
+            } else if (tracker->run[s] >= FLATLINE_MIN) {
+                faults[s] = F_FLATLINE;
             }
         }
     }
 
-    // Temperature jump: more than TEMP_JUMP_C since last minute.
+    // Temperature jump: moved more than TEMP_JUMP_C since last minute
     if (valid[S_TEMP]) {
-        if (ft.hasPrevTemp && out[S_TEMP] == F_NONE &&
-            fabsf(v[S_TEMP] - ft.prevTemp) > TEMP_JUMP_C) {
-            out[S_TEMP] = F_TEMP_JUMP;
+        if (tracker->has_prev_temp && faults[S_TEMP] == F_NONE &&
+            fabsf(values[S_TEMP] - tracker->prev_temp) > TEMP_JUMP_C) {
+            faults[S_TEMP] = F_TEMP_JUMP;
         }
-        ft.prevTemp = v[S_TEMP];
-        ft.hasPrevTemp = true;
+        tracker->prev_temp = values[S_TEMP];
+        tracker->has_prev_temp = true;
     } else {
-        ft.hasPrevTemp = false;
+        tracker->has_prev_temp = false;
+    }
+}
+
+/////////////////////////
+// Function definitions//
+/////////////////////////
+
+struct Score new_score(void) {
+    struct Score score;
+    score.matched = 0;
+    score.total = 0;
+    score.strong = 0;
+    score.required_ok = true;
+    return score;
+}
+
+// A condition that has to be true for the rule to fire
+void score_required(struct Score *score, bool condition) {
+    score->total++;
+    if (condition) {
+        score->matched++;
+    } else {
+        score->required_ok = false;
+    }
+}
+
+// A condition that only adds to the confidence
+void score_optional(struct Score *score, bool condition) {
+    score->total++;
+    if (condition) {
+        score->matched++;
+    }
+}
+
+// A really strong sign, adds STRONG_BONUS to the confidence
+void score_strong(struct Score *score, bool condition) {
+    if (condition) {
+        score->strong++;
+    }
+}
+
+// The label and its confidence, or LBL_NONE if a required condition failed
+struct Rule_result score_result(struct Score score, enum Label_id id) {
+    struct Rule_result result;
+    result.id = LBL_NONE;
+    result.confidence = 0.0f;
+    if (!score.required_ok || score.total == 0) {
+        return result;
+    }
+    float confidence = (float)score.matched / score.total + STRONG_BONUS * score.strong;
+    if (confidence > 1.0f) {
+        confidence = 1.0f;
+    }
+    result.id = id;
+    result.confidence = confidence;
+    return result;
+}
+
+// Baseline of a sensor, but never below the floor (so it's safe to divide by)
+float safe_base(struct Rule_inputs in, int sensor) {
+    float base = in.base[sensor];
+    if (sensor == S_TDS && base < BASE_FLOOR_TDS) {
+        base = BASE_FLOOR_TDS;
+    }
+    if (sensor == S_NTU && base < BASE_FLOOR_NTU) {
+        base = BASE_FLOOR_NTU;
+    }
+    return base;
+}
+
+// Change compared to normal as a fraction: +0.5 means 50 % above normal
+float fraction_rise(struct Rule_inputs in, int sensor) {
+    return (in.now[sensor] - safe_base(in, sensor)) / safe_base(in, sensor);
+}
+
+// How many times bigger than normal the reading is
+float times_base(struct Rule_inputs in, int sensor) {
+    return in.now[sensor] / safe_base(in, sensor);
+}
+
+// Reading minus normal
+float change_from_base(struct Rule_inputs in, int sensor) {
+    return in.now[sensor] - in.base[sensor];
+}
+
+bool is_between(float value, float low, float high) {
+    return value >= low && value <= high;
+}
+
+// Adds the result to the list if the rule fired and there's room
+void add_hit(struct Rule_output *out, struct Rule_result result) {
+    if (result.id != LBL_NONE && out->num_hits < MAX_RULE_HITS) {
+        out->hits[out->num_hits] = result;
+        out->num_hits++;
     }
 }

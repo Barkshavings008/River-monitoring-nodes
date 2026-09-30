@@ -1,27 +1,20 @@
 #pragma once
-// All Serial output lives here. Rules and engines never print.
+// Everything that gets printed to the serial monitor is in here. The rules
+// and the engine never print anything themselves.
 #include "types.h"
 #include "network.h"
 #include "persistence.h"
 #include "sensors.h"
 
-// Start-up banner: mode, timing and the network list.
-void displayBanner(const RiverNetwork &net);
-
-// One-line list of the serial commands.
-void displayHelp();
-
-// One-line ALERT ON/OFF messages, printed as soon as a label changes.
-void displayEvents(const AlertEvent *events, uint8_t n);
-
-// Per-minute human block and/or JSON line (OUTPUT_MODE).
-void displayMinute(const NodeReport &r, const NetworkAssessment &a,
-                   const RiverNetwork &net, uint32_t nowMin);
-
-// Every position in the network and the nodes at it.
-void displayNetworkList(const RiverNetwork &net, uint32_t nowMin);
-
-void displayMessage(const char *msg);
-
-// Raw sensor voltages, for calibration.
-void displayVoltages(const SensorVoltages &v);
+////////////////////////
+// Function prototypes//
+////////////////////////
+void print_banner(struct River_network *network);
+void print_help(void);
+void print_alert_events(struct Alert_event events[], int num_events);
+void print_minute_report(struct Node_report report, struct Network_assessment assessment,
+    struct River_network *network, unsigned long now_min);
+void print_network_list(struct River_network *network, unsigned long now_min);
+void print_message(const char *message);
+void print_voltages(struct Sensor_voltages volts);
+////////////////////////

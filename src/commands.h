@@ -1,8 +1,10 @@
 #pragma once
-// Serial commands for editing the node network at runtime:
-//   list | add <id> <metres> [place] | del <id> | move <id> <metres>
-//   | cal | help
+// Serial commands for changing the node network while it's running:
+//   list | add <id> <metres> [place] | del <id> | move <id> <metres> | cal | help
 #include "network.h"
 
-// Reads any waiting Serial characters and runs each complete command line.
-void commandsPoll(RiverNetwork &net, uint32_t nowMin);
+////////////////////////
+// Function prototypes//
+////////////////////////
+void check_serial_commands(struct River_network *network, unsigned long now_min);
+////////////////////////
