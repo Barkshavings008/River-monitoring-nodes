@@ -1,61 +1,61 @@
 #include "persistence.h"
-#include "config.h"
 #include <string.h>
 
-void Persistence::reset() {
-    memset(onStreak_, 0, sizeof(onStreak_));
-    memset(offStreak_, 0, sizeof(offStreak_));
-    memset(active_, 0, sizeof(active_));
-    memset(conf_, 0, sizeof(conf_));
+void persistence_reset(struct Persistence *persistence) {
+    memset(persistence, 0, sizeof(struct Persistence)); // sets every value in the struct to 0
 }
 
-uint8_t Persistence::update(const RuleResult *hits, uint8_t n,
-                            AlertEvent *events, uint8_t maxEvents) {
-    uint8_t nEv = 0;
-    for (uint8_t id = LBL_NONE + 1; id < LBL_FAULT; id++) {
-        // Find this label's confidence this minute (-1 if it did not fire).
-        float c = -1.0f;
-        for (uint8_t i = 0; i < n; i++) {
+// hits = what the rules found this minute. Any label that turns on or off
+// gets written into events. Returns how many events there were.
+int persistence_update(struct Persistence *persistence, struct Rule_result hits[], int num_hits,
+    struct Alert_event events[], int max_events) {
+    int num_events = 0;
+
+    for (int id = LBL_NONE + 1; id < LBL_FAULT; id++) {
+        // This label's confidence this minute (-1 if the rule didn't fire)
+        float confidence = -1.0f;
+        for (int i = 0; i < num_hits; i++) {
             if (hits[i].id == id) {
-                c = hits[i].conf;
+                confidence = hits[i].confidence;
             }
         }
 
         bool changed = false;
-        if (c >= 0.0f) {
-            offStreak_[id] = 0;
-            if (onStreak_[id] < 255) {
-                onStreak_[id]++;
+        if (confidence >= 0.0f) {
+            persistence->off_streak[id] = 0;
+            if (persistence->on_streak[id] < 255) {
+                persistence->on_streak[id]++;
             }
-            conf_[id] = c;
-            if (!active_[id] && onStreak_[id] >= PERSIST_ON_MIN) {
-                active_[id] = true;
+            persistence->confidence[id] = confidence;
+            if (!persistence->active[id] && persistence->on_streak[id] >= PERSIST_ON_MIN) {
+                persistence->active[id] = true;
                 changed = true;
             }
         } else {
-            onStreak_[id] = 0;
-            if (offStreak_[id] < 255) {
-                offStreak_[id]++;
+            persistence->on_streak[id] = 0;
+            if (persistence->off_streak[id] < 255) {
+                persistence->off_streak[id]++;
             }
-            if (active_[id] && offStreak_[id] >= PERSIST_OFF_MIN) {
-                active_[id] = false;
+            if (persistence->active[id] && persistence->off_streak[id] >= PERSIST_OFF_MIN) {
+                persistence->active[id] = false;
                 changed = true;
             }
         }
 
-        if (changed && nEv < maxEvents) {
-            events[nEv].id = (LabelId)id;
-            events[nEv].on = active_[id];
-            events[nEv].conf = conf_[id];
-            nEv++;
+        if (changed && num_events < max_events) {
+            events[num_events].id = (enum Label_id)id;
+            events[num_events].on = persistence->active[id];
+            events[num_events].confidence = persistence->confidence[id];
+            num_events++;
         }
     }
-    return nEv;
+    return num_events;
 }
 
-bool Persistence::anyActive() const {
-    for (uint8_t id = LBL_NONE + 1; id < LBL_FAULT; id++) {
-        if (active_[id]) {
+// true if any label is on
+bool persistence_any_active(struct Persistence *persistence) {
+    for (int id = LBL_NONE + 1; id < LBL_FAULT; id++) {
+        if (persistence->active[id]) {
             return true;
         }
     }

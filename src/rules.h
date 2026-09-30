@@ -1,55 +1,52 @@
 #pragma once
-// Fault checks and pattern rules. Pure functions: no Serial, no Arduino,
-// so they can be unit tested on a PC with fake data.
+// Sensor fault checks and the pollution pattern rules. No Serial or Arduino
+// stuff in here so it can be tested on a PC with fake data.
 #include "types.h"
 
-struct RuleInputs {
-    float now[S_COUNT];        // this minute's medians
-    float base[S_COUNT];       // baseline medians
-    bool ok[S_COUNT];          // valid, not faulted, baseline available
-    bool hasTdsStepRef;
-    float tdsStepRef;          // TDS up to STEP_WINDOW_MIN ago
-                               // (industrial step change)
-    bool hasDayRange;          // >= 12 h of pH data and not demo mode
-    float phDayMin;
-    float phDayMax;
+// Everything the rules look at for one minute
+struct Rule_inputs {
+    float now[S_COUNT];     // this minute's medians
+    float base[S_COUNT];    // the baseline ("normal") values
+    bool ok[S_COUNT];       // reading is valid, not faulty, and has a baseline
+    bool has_tds_step_ref;
+    float tds_step_ref;     // TDS up to STEP_WINDOW_MIN ago (for the industrial step change)
+    bool has_day_range;     // >= 12 h of pH data and not in demo mode
+    float ph_day_min;
+    float ph_day_max;
 };
 
-const uint8_t MAX_RULE_HITS = 10;
+#define MAX_RULE_HITS 10
 
-struct RuleOutput {
-    RuleResult hits[MAX_RULE_HITS];   // every label whose required
-                                      // conditions are met
-    uint8_t n;
-    bool rain;                        // B fired: C rules and sediment
-                                      // were skipped
+struct Rule_output {
+    struct Rule_result hits[MAX_RULE_HITS]; // every label whose required conditions are met
+    int num_hits;
+    bool rain;                              // B fired, so the C rules and sediment were skipped
 };
 
-// Section 4 B/C/D, run on 1-minute values.
-RuleOutput evaluateRules(const RuleInputs &in);
-
-bool isRainEvent(const RuleInputs &in);
-RuleResult ruleHeavyMetals(const RuleInputs &in);
-RuleResult ruleIndustrial(const RuleInputs &in);
-RuleResult ruleAlkaline(const RuleInputs &in);
-RuleResult ruleSewage(const RuleInputs &in);
-RuleResult ruleNutrients(const RuleInputs &in);
-RuleResult ruleThermal(const RuleInputs &in);
-RuleResult ruleSediment(const RuleInputs &in);
-RuleResult ruleSalt(const RuleInputs &in);
-
-// Section 4 A. Keeps per-sensor history between minutes.
-struct FaultTracker {
+// Section 4 A: remembers each sensor's history between minutes
+struct Fault_tracker {
     float ref[S_COUNT];
-    uint16_t run[S_COUNT];
-    bool hasRef[S_COUNT];
-    float prevTemp;
-    bool hasPrevTemp;
-    void reset();
+    int run[S_COUNT];
+    bool has_ref[S_COUNT];
+    float prev_temp;
+    bool has_prev_temp;
 };
 
-FaultCode checkRange(uint8_t sensor, float v);
+////////////////////////
+// Function prototypes//
+////////////////////////
+struct Rule_output evaluate_rules(struct Rule_inputs in);
+bool is_rain_event(struct Rule_inputs in);
+struct Rule_result rule_heavy_metals(struct Rule_inputs in);
+struct Rule_result rule_industrial(struct Rule_inputs in);
+struct Rule_result rule_alkaline(struct Rule_inputs in);
+struct Rule_result rule_sewage(struct Rule_inputs in);
+struct Rule_result rule_nutrients(struct Rule_inputs in);
+struct Rule_result rule_thermal(struct Rule_inputs in);
+struct Rule_result rule_sediment(struct Rule_inputs in);
+struct Rule_result rule_salt(struct Rule_inputs in);
 
-// Writes one FaultCode per sensor into out[].
-void checkFaults(FaultTracker &ft, const float v[S_COUNT],
-                 const bool valid[S_COUNT], uint8_t out[S_COUNT]);
+void fault_tracker_reset(struct Fault_tracker *tracker);
+enum Fault_code check_range(int sensor, float value);
+void check_faults(struct Fault_tracker *tracker, float values[], bool valid[], enum Fault_code faults[]);
+////////////////////////

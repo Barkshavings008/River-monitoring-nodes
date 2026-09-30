@@ -1,46 +1,33 @@
 #pragma once
 // SIMULATE mode: scripted fake readings (normal -> rain -> normal -> acid
-// spike), plus simulated neighbour nodes that run the same NodeEngine as the
-// real node.
+// spike), plus fake neighbour nodes that run the same engine as the real node.
 #include "types.h"
-#include "config.h"
 #include "node_engine.h"
 #include "network.h"
 
-const char SIM_LOCAL      = 'L';
-const char SIM_UPSTREAM   = 'U';
-const char SIM_SIBLING    = 'S';
-const char SIM_DOWNSTREAM = 'D';
+// Roles for the simulated nodes
+#define SIM_LOCAL 'L'
+#define SIM_UPSTREAM 'U'
+#define SIM_SIBLING 'S'
+#define SIM_DOWNSTREAM 'D'
 
-// Script, in minutes within a repeating cycle. Even cycles: rain at every
-// node (confirmed). Odd cycles: rain only at the local node (unconfirmed).
-const uint32_t SIM_CYCLE_MIN        = 45;
-const uint32_t SIM_RAIN_START       = 8;
-const uint32_t SIM_RAIN_END         = 15;
-const uint32_t SIM_ACID_START       = 20;
-const uint32_t SIM_ACID_END         = 33;
-const uint32_t SIM_DOWNSTREAM_DELAY = 2;
-const uint8_t  SIM_SAMPLES_PER_MIN  = 5;
+// The script, in minutes within a repeating cycle. Even cycles: rain at every
+// node (confirmed). Odd cycles: rain only at this node (unconfirmed).
+#define SIM_CYCLE_MIN 45
+#define SIM_RAIN_START 8
+#define SIM_RAIN_END 15
+#define SIM_ACID_START 20
+#define SIM_ACID_END 33
+#define SIM_DOWNSTREAM_DELAY 2
+#define SIM_SAMPLES_PER_MIN 5
 
-// Returns one fake sample for a node with the given role.
-Reading simReading(char role, uint32_t minute, uint32_t sample);
+#define MAX_SIM_NODES 4
 
-const uint8_t MAX_SIM_REMOTES = 4;
-
-class SimRemotes {
-public:
-    // One simulated engine per DEFAULT_LAYOUT row with a simRole.
-    void begin();
-    // Runs one minute for every simulated node and updates the network.
-    void tick(uint32_t simMinute, uint32_t uptimeSec, RiverNetwork &net,
-              uint32_t nowMin);
-
-private:
-    struct Entry {
-        char id[NODE_ID_LEN];
-        char role;
-        NodeEngine engine;
-    };
-    Entry entries_[MAX_SIM_REMOTES];
-    uint8_t n_ = 0;
-};
+////////////////////////
+// Function prototypes//
+////////////////////////
+struct Reading sim_reading(char role, unsigned long minute, unsigned long sample);
+void sim_add_node(const char *id, char role);
+void sim_tick(unsigned long sim_minute, unsigned long uptime_sec, struct River_network *network,
+    unsigned long now_min);
+////////////////////////

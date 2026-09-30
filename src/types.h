@@ -1,22 +1,19 @@
 #pragma once
-// Plain data types shared by every module (no Arduino dependency).
+// The enums and structs that every part of the program shares.
+// (No Arduino stuff in here so it also builds for the PC tests)
 #include <stdint.h>
+#include "config.h"
 
-enum Sensor : uint8_t {
-    S_PH = 0,
+enum Sensor {
+    S_PH,
     S_TDS,
     S_NTU,
     S_TEMP,
-    S_COUNT
+    S_COUNT,   // number of sensors
 };
 
-struct Reading {
-    float v[S_COUNT];
-    bool valid[S_COUNT];
-};
-
-enum LabelId : uint8_t {
-    LBL_NONE = 0,
+enum Label_id {
+    LBL_NONE,
     // C: pollution
     LBL_HEAVY_METALS,
     LBL_INDUSTRIAL,
@@ -30,99 +27,73 @@ enum LabelId : uint8_t {
     // B: filter
     LBL_RAIN,
     LBL_FAULT,
-    LBL_COUNT
+    LBL_COUNT,   // number of labels
 };
 
-enum Category : uint8_t {
+enum Category {
     CAT_NONE,
     CAT_POLLUTION,
     CAT_WATCH,
     CAT_FILTER,
-    CAT_FAULT
+    CAT_FAULT,
 };
 
-enum FaultCode : uint8_t {
+enum Fault_code {
     F_NONE,
     F_NO_READING,
     F_OUT_OF_RANGE,
     F_FLATLINE,
-    F_TEMP_JUMP
+    F_TEMP_JUMP,
 };
 
-enum NodeState : uint8_t {
+enum Node_state {
     ST_BASELINE_BUILDING,
     ST_NORMAL,
     ST_WATCH,
     ST_ALERT,
-    ST_FAULT
+    ST_FAULT,
 };
 
-struct RuleResult {
-    LabelId id;
-    float conf;
+// One reading from every sensor
+struct Reading {
+    float value[S_COUNT];
+    bool valid[S_COUNT];
 };
 
-const uint8_t MAX_ALSO = 8;
+// What a rule found: which label, and how sure it is (0 to 1)
+struct Rule_result {
+    enum Label_id id;
+    float confidence;
+};
 
-// One node's minute summary: what gets printed, and what a node would send
-// to its neighbours over LoRa/WiFi.
-struct NodeReport {
-    char id[8];
-    uint32_t t;                  // seconds since node boot
-    NodeState state;
-    LabelId label;
-    float conf;
-    LabelId also[MAX_ALSO];
-    uint8_t nAlso;
+#define MAX_ALSO 8
+
+// One node's summary of the last minute. This is what gets printed, and what
+// a node would send to the other nodes over LoRa/WiFi.
+struct Node_report {
+    char id[NODE_ID_LEN];
+    unsigned long time_sec;       // seconds since the node turned on
+    enum Node_state state;
+    enum Label_id label;
+    float confidence;
+    enum Label_id also[MAX_ALSO]; // other labels that are on as well
+    int num_also;
     float now[S_COUNT];
-    bool nowValid[S_COUNT];
+    bool now_valid[S_COUNT];
     float base[S_COUNT];
-    bool baseValid[S_COUNT];
-    uint8_t fault[S_COUNT];      // FaultCode per sensor
-    bool phRecalibrate;
-    uint16_t learnedMin;
-    uint16_t learnNeeded;
-    bool rainPattern;            // raw rain pattern this minute
-                                 // (before persistence)
+    bool base_valid[S_COUNT];
+    enum Fault_code fault[S_COUNT];
+    bool ph_recalibrate;
+    int learned_minutes;
+    int learn_needed;
+    bool rain_pattern;            // rain pattern this minute (before persistence)
 };
 
-// Returns the human name of sensor s, or "?" if s is not a sensor.
-inline const char *sensorName(uint8_t s) {
-    static const char *const names[S_COUNT] = {
-        "pH", "TDS", "Turbidity", "Water temp"
-    };
-    if (s < S_COUNT) {
-        return names[s];
-    }
-    return "?";
-}
-
-// Returns the short code of sensor s, or "?" if s is not a sensor.
-inline const char *sensorCode(uint8_t s) {
-    static const char *const codes[S_COUNT] = { "PH", "TDS", "NTU", "TEMP" };
-    if (s < S_COUNT) {
-        return codes[s];
-    }
-    return "?";
-}
-
-// Returns the name of a node state.
-inline const char *stateName(NodeState st) {
-    static const char *const names[] = {
-        "BASELINE_BUILDING", "NORMAL", "WATCH", "ALERT", "FAULT"
-    };
-    return names[st];
-}
-
-// Returns true if the report's main label or any "also" label is id.
-inline bool reportHasLabel(const NodeReport &r, LabelId id) {
-    if (r.label == id) {
-        return true;
-    }
-    for (uint8_t i = 0; i < r.nAlso; i++) {
-        if (r.also[i] == id) {
-            return true;
-        }
-    }
-    return false;
-}
+////////////////////////
+// Function prototypes//
+////////////////////////
+const char *sensor_name(int sensor);
+const char *sensor_code(int sensor);
+const char *state_name(enum Node_state state);
+bool report_has_label(struct Node_report report, enum Label_id id);
+////////////////////////

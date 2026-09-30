@@ -2,127 +2,97 @@
 #include <math.h>
 #include <string.h>
 
-// Median of v[0..n). Uses insertion sort (n is small), so v gets sorted.
-float medianOf(float *v, uint16_t n) {
+////////////////////////
+// Function prototypes//
+////////////////////////
+void update_sensor_median(struct Baseline *baseline, int sensor);
+void track_ph_day(struct Baseline *baseline, bool valid, float ph);
+void track_ph_drift(struct Baseline *baseline);
+bool ph_drift_found(struct Baseline *baseline);
+////////////////////////
+
+// Median of values[0..n). This sorts the array (insertion sort, n is small).
+float median_of(float values[], int n) {
     if (n == 0) {
         return 0.0f;
     }
-    for (uint16_t i = 1; i < n; i++) {
-        float x = v[i];
-        int16_t j = (int16_t)i - 1;
-        while (j >= 0 && v[j] > x) {
-            v[j + 1] = v[j];
+    for (int i = 1; i < n; i++) {
+        float x = values[i];
+        int j = i - 1;
+        while (j >= 0 && values[j] > x) {
+            values[j + 1] = values[j];
             j--;
         }
-        v[j + 1] = x;
+        values[j + 1] = x;
     }
 
     if (n % 2 == 1) {
-        return v[n / 2];
+        return values[n / 2];
+    } else {
+        return 0.5f * (values[n / 2 - 1] + values[n / 2]);
     }
-    return 0.5f * (v[n / 2 - 1] + v[n / 2]);
 }
 
-// Clears everything the baseline has learned.
-void Baseline::reset() {
-    memset(slots_, 0, sizeof(slots_));
-    memset(count_, 0, sizeof(count_));
-    memset(head_, 0, sizeof(head_));
-    memset(pending_, 0, sizeof(pending_));
-    memset(pendingN_, 0, sizeof(pendingN_));
-    memset(median_, 0, sizeof(median_));
-    learned_ = 0;
-    memset(hourMin_, 0, sizeof(hourMin_));
-    memset(hourMax_, 0, sizeof(hourMax_));
-    memset(hourHas_, 0, sizeof(hourHas_));
-    hourIdx_ = 0;
-    minuteInHour_ = 0;
-    phTracked_ = 0;
-    memset(driftHist_, 0, sizeof(driftHist_));
-    driftN_ = 0;
-    minutesSinceSnap_ = 0;
-    drift_ = false;
+// Forgets everything the baseline has learned
+void baseline_reset(struct Baseline *baseline) {
+    memset(baseline, 0, sizeof(struct Baseline)); // sets every value in the struct to 0
 }
 
-// Adds one minute of medians. Once a slot's worth of minutes is collected
-// for a sensor, the slot median is pushed into that sensor's ring buffer.
-void Baseline::addMinute(const float v[S_COUNT], const bool valid[S_COUNT],
-                         const bool add[S_COUNT]) {
+// Called once a minute with that minute's medians.
+// add[s] == false freezes sensor s (alert on, rain, or sensor fault).
+void baseline_add_minute(struct Baseline *baseline, float values[], bool valid[], bool add[]) {
     bool any = false;
-    for (uint8_t s = 0; s < S_COUNT; s++) {
+    for (int s = 0; s < S_COUNT; s++) {
         if (valid[s] && add[s]) {
             any = true;
-            pending_[s][pendingN_[s]] = v[s];
-            pendingN_[s]++;
+            baseline->pending[s][baseline->num_pending[s]] = values[s];
+            baseline->num_pending[s]++;
 
-            if (pendingN_[s] >= BASELINE_SLOT_MIN) {
-                slots_[s][head_[s]] = medianOf(pending_[s], pendingN_[s]);
-                pendingN_[s] = 0;
-                head_[s] = (head_[s] + 1) % BASELINE_SLOTS;
-                if (count_[s] < BASELINE_SLOTS) {
-                    count_[s]++;
+            // A full slot's worth of minutes: save its median into the ring buffer
+            if (baseline->num_pending[s] >= BASELINE_SLOT_MIN) {
+                int head = baseline->head[s];
+                baseline->slots[s][head] = median_of(baseline->pending[s], baseline->num_pending[s]);
+                baseline->num_pending[s] = 0;
+                baseline->head[s] = (head + 1) % BASELINE_SLOTS;
+                if (baseline->count[s] < BASELINE_SLOTS) {
+                    baseline->count[s]++;
                 }
-                recompute(s);
+                update_sensor_median(baseline, s);
             }
         }
     }
-    if (any && learned_ < 0xFFFF) {
-        learned_++;
+    if (any && baseline->learned_minutes < 0xFFFF) {
+        baseline->learned_minutes++;
     }
 
-    trackPhDay(valid[S_PH], v[S_PH]);
-    trackDrift();
+    track_ph_day(baseline, valid[S_PH], values[S_PH]);
+    track_ph_drift(baseline);
 }
 
-// Recalculates the baseline median for sensor s from its slots.
-void Baseline::recompute(uint8_t s) {
-    static float scratch[BASELINE_SLOTS];
-    memcpy(scratch, slots_[s], count_[s] * sizeof(float));
-    median_[s] = medianOf(scratch, count_[s]);
+// true once the warm-up time has been learned
+bool baseline_ready(struct Baseline *baseline) {
+    return baseline->learned_minutes >= BASELINE_MIN_MINUTES;
 }
 
-// Keeps the lowest and highest pH seen in each hour of the last day.
-void Baseline::trackPhDay(bool valid, float ph) {
-    if (valid) {
-        if (!hourHas_[hourIdx_]) {
-            hourMin_[hourIdx_] = ph;
-            hourMax_[hourIdx_] = ph;
-            hourHas_[hourIdx_] = true;
-        } else {
-            if (ph < hourMin_[hourIdx_]) {
-                hourMin_[hourIdx_] = ph;
-            }
-            if (ph > hourMax_[hourIdx_]) {
-                hourMax_[hourIdx_] = ph;
-            }
-        }
-    }
-
-    minuteInHour_++;
-    if (minuteInHour_ >= 60) {
-        minuteInHour_ = 0;
-        hourIdx_ = (hourIdx_ + 1) % PH_DAY_BUCKETS;
-        hourHas_[hourIdx_] = false;
-    }
-    if (phTracked_ < 0xFFFFFFFFu) {
-        phTracked_++;
-    }
+// true if the sensor has at least one slot of data
+bool baseline_has(struct Baseline *baseline, int sensor) {
+    return baseline->count[sensor] > 0;
 }
 
-// Writes the day's lowest pH into mn and highest into mx.
-// Returns false if there is not enough data yet.
-bool Baseline::phDayRange(float &mn, float &mx) const {
-    if (phTracked_ < NUTRIENT_MIN_MINUTES) {
+// Gets the lowest and highest pH of the last 24 h.
+// Returns false until there's NUTRIENT_MIN_MINUTES of data.
+bool baseline_ph_day_range(struct Baseline *baseline, float *min_ph, float *max_ph) {
+    if (baseline->ph_tracked < NUTRIENT_MIN_MINUTES) {
         return false;
     }
     bool found = false;
-    for (uint8_t i = 0; i < PH_DAY_BUCKETS; i++) {
-        if (hourHas_[i]) {
-            if (!found || hourMin_[i] < mn) {
-                mn = hourMin_[i];
+    for (int i = 0; i < PH_DAY_BUCKETS; i++) {
+        if (baseline->hour_has[i]) {
+            if (!found || baseline->hour_min[i] < *min_ph) {
+                *min_ph = baseline->hour_min[i];
             }
-            if (!found || hourMax_[i] > mx) {
-                mx = hourMax_[i];
+            if (!found || baseline->hour_max[i] > *max_ph) {
+                *max_ph = baseline->hour_max[i];
             }
             found = true;
         }
@@ -130,66 +100,112 @@ bool Baseline::phDayRange(float &mn, float &mx) const {
     return found;
 }
 
-// Every DRIFT_SNAPSHOT_MIN minutes, saves a copy of the baseline so slow
-// pH probe drift can be spotted.
-void Baseline::trackDrift() {
+/////////////////////////
+// Function definitions//
+/////////////////////////
+
+// Works out the new baseline for one sensor from its slots
+void update_sensor_median(struct Baseline *baseline, int sensor) {
+    float copy[BASELINE_SLOTS];   // median_of() sorts, so give it a copy
+    for (int i = 0; i < baseline->count[sensor]; i++) {
+        copy[i] = baseline->slots[sensor][i];
+    }
+    baseline->median[sensor] = median_of(copy, baseline->count[sensor]);
+}
+
+void track_ph_day(struct Baseline *baseline, bool valid, float ph) {
+    int hour = baseline->hour_index;
+    if (valid) {
+        if (!baseline->hour_has[hour]) {
+            baseline->hour_min[hour] = ph;
+            baseline->hour_max[hour] = ph;
+            baseline->hour_has[hour] = true;
+        } else {
+            if (ph < baseline->hour_min[hour]) {
+                baseline->hour_min[hour] = ph;
+            }
+            if (ph > baseline->hour_max[hour]) {
+                baseline->hour_max[hour] = ph;
+            }
+        }
+    }
+
+    // Move on to the next hour every 60 minutes
+    baseline->minute_in_hour++;
+    if (baseline->minute_in_hour >= 60) {
+        baseline->minute_in_hour = 0;
+        baseline->hour_index = (hour + 1) % PH_DAY_BUCKETS;
+        baseline->hour_has[baseline->hour_index] = false;
+    }
+    if (baseline->ph_tracked < 0xFFFFFFFFUL) {
+        baseline->ph_tracked++;
+    }
+}
+
+// Every DRIFT_SNAPSHOT_MIN minutes, save a copy of the baseline so a slowly
+// drifting pH probe can be spotted
+void track_ph_drift(struct Baseline *baseline) {
     if (DEMO_MODE) {
         return;
     }
-    minutesSinceSnap_++;
-    if (minutesSinceSnap_ < DRIFT_SNAPSHOT_MIN) {
+    baseline->minutes_since_snapshot++;
+    if (baseline->minutes_since_snapshot < DRIFT_SNAPSHOT_MIN) {
         return;
     }
-    minutesSinceSnap_ = 0;
-    for (uint8_t s = 0; s < S_COUNT; s++) {
-        if (count_[s] == 0) {
+    baseline->minutes_since_snapshot = 0;
+    for (int s = 0; s < S_COUNT; s++) {
+        if (baseline->count[s] == 0) {
             return;
         }
     }
 
-    if (driftN_ == DRIFT_SNAPSHOTS) {
-        memmove(driftHist_[0], driftHist_[1],
-                (DRIFT_SNAPSHOTS - 1) * sizeof(driftHist_[0]));
-        driftN_--;
+    // History is full: throw away the oldest one by shifting everything down
+    if (baseline->num_drift == DRIFT_SNAPSHOTS) {
+        for (int i = 0; i < DRIFT_SNAPSHOTS - 1; i++) {
+            for (int s = 0; s < S_COUNT; s++) {
+                baseline->drift_history[i][s] = baseline->drift_history[i + 1][s];
+            }
+        }
+        baseline->num_drift--;
     }
-    for (uint8_t s = 0; s < S_COUNT; s++) {
-        driftHist_[driftN_][s] = median_[s];
+    for (int s = 0; s < S_COUNT; s++) {
+        baseline->drift_history[baseline->num_drift][s] = baseline->median[s];
     }
-    driftN_++;
+    baseline->num_drift++;
 
-    if (driftN_ == DRIFT_SNAPSHOTS && checkDrift()) {
-        drift_ = true;
+    if (baseline->num_drift == DRIFT_SNAPSHOTS && ph_drift_found(baseline)) {
+        baseline->drift_detected = true;
     } else {
-        drift_ = false;
+        baseline->drift_detected = false;
     }
 }
 
-// pH baseline moved steadily (monotonic) by > DRIFT_PH_LIMIT over the
-// history, while the other sensors' baselines stayed within
-// DRIFT_OTHER_TOL.
-bool Baseline::checkDrift() const {
-    int dir = 0;
-    for (uint8_t i = 1; i < driftN_; i++) {
-        float d = driftHist_[i][S_PH] - driftHist_[i - 1][S_PH];
-        if (d > 0) {
-            if (dir < 0) {
+// The pH baseline kept moving the same way (always up or always down) by
+// more than DRIFT_PH_LIMIT, while the other sensors stayed within
+// DRIFT_OTHER_TOL
+bool ph_drift_found(struct Baseline *baseline) {
+    int direction = 0;
+    for (int i = 1; i < baseline->num_drift; i++) {
+        float change = baseline->drift_history[i][S_PH] - baseline->drift_history[i - 1][S_PH];
+        if (change > 0) {
+            if (direction < 0) {
                 return false;
             }
-            dir = 1;
-        } else if (d < 0) {
-            if (dir > 0) {
+            direction = 1;
+        } else if (change < 0) {
+            if (direction > 0) {
                 return false;
             }
-            dir = -1;
+            direction = -1;
         }
     }
 
-    const float *first = driftHist_[0];
-    const float *last = driftHist_[driftN_ - 1];
+    float *first = baseline->drift_history[0];
+    float *last = baseline->drift_history[baseline->num_drift - 1];
     if (fabsf(last[S_PH] - first[S_PH]) <= DRIFT_PH_LIMIT) {
         return false;
     }
-    for (uint8_t s = S_TDS; s < S_COUNT; s++) {
+    for (int s = S_TDS; s < S_COUNT; s++) {
         float ref = 1.0f;
         if (fabsf(first[s]) > 1e-3f) {
             ref = fabsf(first[s]);
