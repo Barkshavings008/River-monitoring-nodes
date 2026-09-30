@@ -149,8 +149,8 @@ void build_report(struct Node_engine *engine, unsigned long uptime_sec, struct R
     }
 
     // Labels that are on, split into pollution and watch lists
-    enum Label_id pollution[4];
-    enum Label_id watch[4];
+    enum Label_id pollution[LBL_COUNT];
+    enum Label_id watch[LBL_COUNT];
     int num_pollution = 0;
     int num_watch = 0;
     sort_active_labels(engine, pollution, &num_pollution, watch, &num_watch);

@@ -180,6 +180,15 @@
 #define SALT_PH_TOL 0.3f
 #define SALT_NTU_RATIO 1.5f
 
+// Treated wastewater / fertiliser runoff: clear water with extra dissolved
+// salts and a slightly lower pH
+#define EFF_TDS_RISE 0.10f
+#define EFF_PH_DROP_MIN 0.2f
+#define EFF_PH_DROP_MAX 1.0f
+#define EFF_NTU_RATIO 1.5f      // turbidity has to stay below this (muddy = sewage rule instead)
+#define EFF_TEMP_RISE_MIN 0.3f
+#define EFF_TEMP_RISE_MAX 3.0f
+
 /////////////////////////
 ///// 5. PERSISTENCE ////
 /////////////////////////

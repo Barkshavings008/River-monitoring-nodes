@@ -58,14 +58,18 @@ This needs `clang` (version 16 or newer, with the wasm32 target), `curl` and
 
 ## Things to try
 
-- **Start Factory 2 (sewage)**. B1 picks it up, then M1 below the join says it's
-  "coming from further upstream at B1".
+- **Start Factory 2 (untreated sewage overflow)**. B1 picks it up, then M1 below
+  the join says it's "coming from further upstream at B1".
+- **Switch Factory 2 to treated sewage effluent.** The water stays clear, so the
+  sewage rule doesn't fire. The effluent / fertiliser rule catches it instead
+  (TDS up, pH slightly down, turbidity normal).
 - **Start two factories at once.** M1 sees both streams' nodes as its upstream
   neighbours.
 - **Rain storm.** Every node sees the rain pattern at once, so it's reported as
   a confirmed weather event and not as pollution.
-- **Farm fertiliser runoff.** Algae make the pH swing up by day and down at
-  night. The nutrients rule needs 12 h of readings, so use Skip 12 h.
+- **Farm fertiliser runoff.** It shows up straight away as effluent / fertiliser.
+  Over the next day an algae bloom makes the pH swing up by day and down at
+  night, and the nutrients alert follows (use Skip 12 h).
 - **Drag a node** between a factory and the node below it. It relearns normal
   levels for an hour, then narrows down where the source is.
 - **Break a sensor** (node panel > Sensors), or take a node offline.

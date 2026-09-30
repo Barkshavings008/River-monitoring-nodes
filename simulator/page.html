@@ -3,8 +3,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: field-survey console. Map of the catchment on the left, instrument
-   panels (factories, selected node) on the right, logs under the map. */
+/* Layout: field-survey console. Map of the catchment on the left with the
+   factory controls and logs under it; the selected node's serial monitor and
+   readings on the right, beside the map. */
 :root {
     --bg: #eef1ef;
     --panel: #fbfcfb;
@@ -162,7 +163,7 @@ select.btn { padding-right: 6px; }
 .legend .sw { width: 18px; height: 6px; border-radius: 3px; background: var(--c); }
 
 /* factories */
-.factories { display: flex; flex-direction: column; gap: 12px; }
+.factories { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 .factory { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); }
 .factory header { display: flex; align-items: center; gap: 10px; }
 .factory .badge {
@@ -173,8 +174,9 @@ select.btn { padding-right: 6px; }
 .factory .where { margin: 0; font-size: 0.82rem; color: var(--muted); }
 .factory .head-text { min-width: 0; flex: 1; }
 .factory .discharge[aria-pressed="true"] { background: var(--fc); color: #ffffff; border-color: var(--fc); }
-.field { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 0.9rem; }
+.field { display: grid; grid-template-columns: 4.6em minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 0.9rem; }
 .field > span:first-child { color: var(--muted); }
+.field.two { grid-template-columns: 4.6em minmax(0, 1fr); }
 .field select, .field input[type="range"] { width: 100%; min-width: 0; }
 .field select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .field output { font-family: var(--font-data); font-size: 0.85rem; min-width: 6.5ch; text-align: right; }
@@ -233,11 +235,12 @@ table.readings td.big { color: var(--alert); font-weight: 500; }
 .node-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
 .node-tools label { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--muted); }
 .node-tools select { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 4px 6px; }
-details.serial { margin-top: 14px; }
-details.serial summary { cursor: pointer; font-weight: 500; }
+.serial-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.serial-head h2 { font-size: 1.25rem; }
+.serial-head span { font-size: 0.82rem; color: var(--muted); }
 pre.serial-out {
-    margin: 8px 0 0; padding: 10px 12px; background: #0e1412; color: #d7e0dc; border-radius: 6px;
-    font-family: var(--font-data); font-size: 12px; line-height: 1.35; overflow-x: auto; max-height: 420px;
+    margin: 8px 0 0; height: min(430px, 60vh); padding: 10px 12px; background: #0e1412; color: #d7e0dc; border-radius: 6px;
+    font-family: var(--font-data); font-size: 12px; line-height: 1.35; overflow: auto;
 }
 .a31 { color: #ff7b72; } .a32 { color: #6fdc8c; } .a33 { color: #f2cc60; } .a35 { color: #e38bf0; } .a90 { color: #8b9994; }
 
@@ -294,6 +297,10 @@ table.speeds td { padding: 5px 4px; border-bottom: 1px solid var(--line); font-f
         <div class="map-wrap"><svg id="map" viewBox="0 0 1000 580" role="img" aria-label="Map of two streams joining into a main river, with monitoring nodes and factories"></svg></div>
         <div class="legend" id="legend"></div>
         <p class="map-help">Drag a node (circle) or a factory (square) to any spot on the rivers. Click a node to see what it's reporting. A moved node relearns normal levels (1 hour) before it can raise alerts.</p>
+        <section class="panel" aria-labelledby="fac-title">
+            <h2 id="fac-title">Factories</h2>
+            <div class="factories" id="factories"></div>
+        </section>
         <div class="below">
             <section class="panel">
                 <h2>Alerts and events</h2>
@@ -307,9 +314,12 @@ table.speeds td { padding: 5px 4px; border-bottom: 1px solid var(--line); font-f
     </section>
 
     <aside class="side">
-        <section class="panel" aria-labelledby="fac-title">
-            <h2 id="fac-title">Factories</h2>
-            <div class="factories" id="factories"></div>
+        <section class="panel" aria-labelledby="serial-title">
+            <div class="serial-head">
+                <h2 id="serial-title">Serial monitor</h2>
+                <span>What the selected node's board prints each minute</span>
+            </div>
+            <pre class="serial-out" id="serial"></pre>
         </section>
         <section class="panel" id="detail" aria-live="polite"><p class="loading">Starting the node code…</p></section>
     </aside>
@@ -372,10 +382,11 @@ async function start() {
     requestAnimationFrame(frame);
 }
 
-// Two hours of clean water so every node has learned "normal", then (first
-// time only) the mine starts so there's something to see straight away
+// 14 hours of clean water so every node has learned "normal" (and has the
+// 12 h of pH history the nutrients rule needs), then (first time only) the
+// mine starts so there's something to see straight away
 function warmUp(firstTime) {
-    for (let i = 0; i < 120; i++) sim.tick();
+    for (let i = 0; i < 14 * 60; i++) sim.tick();
     sim.log = [];
     sim.addLog("user", "Nodes finished learning normal levels");
     if (firstTime) {
@@ -691,7 +702,7 @@ function buildFactories() {
                 <div class="head-text"><h3>${html(fac.name)}</h3><p class="where" id="fac-where-${k}"></p></div>
                 <button class="btn small discharge" id="fac-on-${k}" type="button" aria-pressed="false">Start</button>
             </header>
-            <label class="field"><span>Waste</span><select id="fac-type-${k}">${options}</select><span></span></label>
+            <label class="field two"><span>Waste</span><select id="fac-type-${k}">${options}</select></label>
             <label class="field"><span>Discharge</span><input type="range" id="fac-flow-${k}" min="0" max="2000" step="10" value="${fac.flowLps}"><output id="fac-flow-out-${k}">${fac.flowLps} L/s</output></label>
             <p class="note" id="fac-note-${k}"></p>
             <details class="custom"><summary>Customise the waste</summary><div class="custom-grid" id="fac-custom-${k}"></div></details>`;
@@ -754,7 +765,8 @@ function renderFactories() {
         } else {
             note += " Not discharging.";
         }
-        if (fac.type === "farm") note += " Nutrient alerts need 12 h of clean readings first, then show over the next day-night cycle (use Skip 12 h).";
+        if (fac.type === "farm") note += " Shows up as effluent / fertiliser first. As algae bloom over the next day, a nutrients alert follows (use Skip 12 h).";
+        if (fac.type === "treated") note += " Clear water, so the sewage rule (which needs muddy water) won't fire. The effluent / fertiliser rule catches it.";
         $(`fac-note-${k}`).innerHTML = note;
     });
 }
@@ -810,7 +822,6 @@ function renderDetail() {
     if (!node) { node = sim.nodes[0]; selectedId = node.id; }
     const state = nodeState(node);
     const r = node.report;
-    const serialOpen = box.querySelector("details.serial")?.open ?? false;
     const faultOptions = Object.entries(FAULTS)
         .map(([key, text]) => `<option value="${key}"${key === node.fault ? " selected" : ""}>${html(text)}</option>`).join("");
 
@@ -864,25 +875,19 @@ function renderDetail() {
         <div class="node-tools">
             <label for="fault">Sensors <select id="fault">${faultOptions}</select></label>
             <button class="btn small" type="button" id="remove-node">Remove node</button>
-        </div>
-        <details class="serial"${serialOpen ? " open" : ""}>
-            <summary>Serial monitor: what ${node.id} prints</summary>
-            <pre class="serial-out" id="serial"></pre>
-        </details>`;
+        </div>`;
     $("fault").addEventListener("change", (e) => { sim.setFault(node.id, e.target.value); renderAll(); });
     $("remove-node").addEventListener("click", () => {
         if (sim.removeNode(node.id)) { selectedId = sim.nodes[0].id; drawNodes(); renderAll(); }
     });
-    box.querySelector("details.serial").addEventListener("toggle", renderSerial);
     renderSparks(node);
     renderSerial();
 }
 
 function renderSerial() {
-    const details = document.querySelector("#detail details.serial");
-    if (!details || !details.open) return;
     const node = sim.nodes.find((n) => n.id === selectedId);
     if (!node) return;
+    $("serial-title").textContent = `Serial monitor: ${node.id}`;
     const text = node.fault === "offline" ? "(no output: node is offline)\n" : sim.code.serial(node.id, sim.minute);
     // Turn the colour codes the board prints into coloured text
     let out = "";
