@@ -39,7 +39,7 @@ void test_sorted_insert_and_positions(void) {
     TEST_ASSERT_EQUAL_UINT32(1000, network_position_distance(&network, 1));
     int indexes[MAX_NODES];
     // Two nodes at the same position
-    TEST_ASSERT_EQUAL(2, network_nodes_at(&network, 1000, indexes, MAX_NODES));
+    TEST_ASSERT_EQUAL(2, network_nodes_at(&network, 0, 1000, indexes, MAX_NODES));
 }
 
 void test_duplicate_and_capacity(void) {
@@ -126,6 +126,134 @@ void test_assess_rain_confirmed_and_unconfirmed(void) {
     TEST_ASSERT_EQUAL(NF_RAIN_UNCONFIRMED, network_assess(&network, "N1", 10).finding);
 }
 
+/////////////////////////
+//////// BRANCHES ///////
+/////////////////////////
+
+// Two streams joining into the main river:
+//
+//   stream_a (2000 m long)  A1 at 500, A2 at 1800 --.
+//                                                     >-- joins main at 0 m -- M1 at 300, M2 at 2000
+//   stream_b (1500 m long)  B1 at 1200 -------------'
+//   stream_c (800 m long) joins main at 1000 m, C1 at 700
+void build_branched(void) {
+    network_clear(&network);
+    TEST_ASSERT_EQUAL(0, network_add_branch(&network, "main", 0, NULL, 0));
+    TEST_ASSERT_EQUAL(1, network_add_branch(&network, "stream_a", 2000, "main", 0));
+    TEST_ASSERT_EQUAL(2, network_add_branch(&network, "stream_b", 1500, "main", 0));
+    TEST_ASSERT_EQUAL(3, network_add_branch(&network, "stream_c", 800, "main", 1000));
+    // Added in a jumbled order on purpose
+    network_add_node_on_branch(&network, "M2", "main", 2000, "town", false);
+    network_add_node_on_branch(&network, "B1", "stream_b", 1200, "b", false);
+    network_add_node_on_branch(&network, "M1", "main", 300, "below join", true);
+    network_add_node_on_branch(&network, "A2", "stream_a", 1800, "a low", false);
+    network_add_node_on_branch(&network, "C1", "stream_c", 700, "c", false);
+    network_add_node_on_branch(&network, "A1", "stream_a", 500, "a high", false);
+}
+
+// Gives every node a normal report at minute 10
+void all_normal(void) {
+    for (int i = 0; i < network.num_nodes; i++) {
+        network_update_report(&network, network.nodes[i].id, make_report(ST_NORMAL, LBL_NONE, false), 10);
+    }
+}
+
+void test_branch_setup_rules(void) {
+    network_clear(&network);
+    TEST_ASSERT_EQUAL(-1, network_add_branch(&network, "stream", 100, "main", 0)); // main isn't there yet
+    TEST_ASSERT_EQUAL(0, network_add_branch(&network, "main", 0, NULL, 0));
+    TEST_ASSERT_EQUAL(-1, network_add_branch(&network, "main", 0, NULL, 0));      // name already used
+    TEST_ASSERT_FALSE(network_add_node_on_branch(&network, "X", "nowhere", 0, "x", false));
+    TEST_ASSERT_TRUE(network_add_node(&network, "X", 0, "x", false));
+    TEST_ASSERT_EQUAL(1, network.num_branches);                                 // reused "main"
+}
+
+void test_branch_order_is_streams_first(void) {
+    build_branched();
+    TEST_ASSERT_EQUAL_STRING("A1", network.nodes[0].id);
+    TEST_ASSERT_EQUAL_STRING("A2", network.nodes[1].id);
+    TEST_ASSERT_EQUAL_STRING("B1", network.nodes[2].id);
+    TEST_ASSERT_EQUAL_STRING("C1", network.nodes[3].id);
+    TEST_ASSERT_EQUAL_STRING("M1", network.nodes[4].id);
+    TEST_ASSERT_EQUAL_STRING("M2", network.nodes[5].id);
+    TEST_ASSERT_EQUAL(6, network_position_count(&network));
+}
+
+void test_river_distance_follows_the_water(void) {
+    build_branched();
+    int a1 = network_find_node(&network, "A1");
+    int a2 = network_find_node(&network, "A2");
+    int b1 = network_find_node(&network, "B1");
+    int m1 = network_find_node(&network, "M1");
+    int m2 = network_find_node(&network, "M2");
+    TEST_ASSERT_EQUAL(1300, network_river_distance(&network, a1, a2));
+    TEST_ASSERT_EQUAL(1500 + 300, network_river_distance(&network, a1, m1));
+    TEST_ASSERT_EQUAL(300 + 300, network_river_distance(&network, b1, m1));
+    TEST_ASSERT_EQUAL(1700, network_river_distance(&network, m1, m2));
+    TEST_ASSERT_EQUAL(-1, network_river_distance(&network, m1, a1));  // upstream, not down
+    TEST_ASSERT_EQUAL(-1, network_river_distance(&network, a1, b1));  // different stream
+}
+
+void test_below_the_join_sees_both_streams(void) {
+    build_branched();
+    all_normal();
+    network_update_report(&network, "M1", make_report(ST_ALERT, LBL_SEWAGE, false), 10);
+    struct Network_assessment a = network_assess(&network, "M1", 10);
+    TEST_ASSERT_EQUAL(NF_SOURCE_BETWEEN, a.finding);
+    TEST_ASSERT_TRUE(a.branched);
+    TEST_ASSERT_EQUAL(2, a.num_upstream);              // A2 (not A1) and B1
+    TEST_ASSERT_EQUAL_STRING("A2, B1", a.upstream_list);
+}
+
+void test_pollution_from_one_stream(void) {
+    build_branched();
+    all_normal();
+    network_update_report(&network, "B1", make_report(ST_ALERT, LBL_HEAVY_METALS, false), 10);
+    network_update_report(&network, "M1", make_report(ST_ALERT, LBL_HEAVY_METALS, false), 10);
+    struct Network_assessment a = network_assess(&network, "M1", 10);
+    TEST_ASSERT_EQUAL(NF_FROM_UPSTREAM, a.finding);
+    TEST_ASSERT_EQUAL_STRING("B1", a.upstream_id);     // the stream it came from
+    TEST_ASSERT_EQUAL_STRING("stream_b", a.upstream_branch);
+    TEST_ASSERT_EQUAL(600, a.upstream_gap_m);
+}
+
+void test_stream_joining_between_nodes(void) {
+    build_branched();
+    all_normal();
+    // M2 is below where stream_c joins, so its upstream nodes are M1 and C1
+    network_update_report(&network, "C1", make_report(ST_ALERT, LBL_SALT, false), 10);
+    network_update_report(&network, "M2", make_report(ST_ALERT, LBL_SALT, false), 10);
+    struct Network_assessment a = network_assess(&network, "M2", 10);
+    TEST_ASSERT_EQUAL(NF_FROM_UPSTREAM, a.finding);
+    TEST_ASSERT_EQUAL_STRING("C1", a.upstream_id);
+    TEST_ASSERT_EQUAL(2, a.num_upstream);
+}
+
+void test_stale_stream_node_looks_further_up(void) {
+    build_branched();
+    all_normal();
+    network_update_report(&network, "A2", make_report(ST_NORMAL, LBL_NONE, false), 1); // out of date
+    network_update_report(&network, "M1", make_report(ST_ALERT, LBL_SEWAGE, false), 10);
+    struct Network_assessment a = network_assess(&network, "M1", 10);
+    TEST_ASSERT_EQUAL_STRING("A1, B1", a.upstream_list);
+}
+
+void test_top_node_has_nothing_upstream(void) {
+    build_branched();
+    all_normal();
+    network_update_report(&network, "A1", make_report(ST_ALERT, LBL_HEAVY_METALS, false), 10);
+    struct Network_assessment a = network_assess(&network, "A1", 10);
+    TEST_ASSERT_EQUAL(NF_NO_UPSTREAM, a.finding);
+    TEST_ASSERT_FALSE(a.has_upstream);
+}
+
+void test_move_node_to_other_branch(void) {
+    build_branched();
+    TEST_ASSERT_TRUE(network_move_node_to_branch(&network, "M2", "stream_b", 100));
+    TEST_ASSERT_EQUAL_STRING("M2", network.nodes[2].id);   // now the first node on stream_b
+    TEST_ASSERT_FALSE(network_move_node_to_branch(&network, "M2", "nowhere", 100));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_sorted_insert_and_positions);
@@ -138,5 +266,14 @@ int main(void) {
     RUN_TEST(test_assess_between_when_no_sibling_data);
     RUN_TEST(test_assess_stale_upstream_ignored);
     RUN_TEST(test_assess_rain_confirmed_and_unconfirmed);
+    RUN_TEST(test_branch_setup_rules);
+    RUN_TEST(test_branch_order_is_streams_first);
+    RUN_TEST(test_river_distance_follows_the_water);
+    RUN_TEST(test_below_the_join_sees_both_streams);
+    RUN_TEST(test_pollution_from_one_stream);
+    RUN_TEST(test_stream_joining_between_nodes);
+    RUN_TEST(test_stale_stream_node_looks_further_up);
+    RUN_TEST(test_top_node_has_nothing_upstream);
+    RUN_TEST(test_move_node_to_other_branch);
     return UNITY_END();
 }

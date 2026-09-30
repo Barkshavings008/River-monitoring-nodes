@@ -1,0 +1,1027 @@
+<title>River Node Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: field-survey console. Map of the catchment on the left, instrument
+   panels (factories, selected node) on the right, logs under the map. */
+:root {
+    --bg: #eef1ef;
+    --panel: #fbfcfb;
+    --ink: #14201c;
+    --muted: #5a6a64;
+    --line: #d3dcd8;
+    --land: #e2e8df;
+    --contour: #d2dbcf;
+    --bank: #c3cfbf;
+    --water: #4a8fc4;
+    --flow: rgba(255, 255, 255, 0.55);
+    --mud: #8a6b3f;
+    --accent: #1f5f8b;
+    --accent-ink: #ffffff;
+    --soft: #e7ecea;
+
+    --ok: #2f7d4f;
+    --watch: #a87906;
+    --alert: #c2352b;
+    --fault: #9c3ba0;
+    --learn: #7b8a86;
+
+    --f1: #d9730d;
+    --f2: #7b4fd6;
+    --f3: #c7306f;
+
+    --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+    --font-body: "Barlow", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-data: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #0f1513; --panel: #161e1b; --ink: #e1eae6; --muted: #93a39d; --line: #2a3632;
+        --land: #18221e; --contour: #20302a; --bank: #25342d; --water: #3d80b6; --flow: rgba(255, 255, 255, 0.35);
+        --mud: #a2804d; --accent: #6db3e6; --accent-ink: #0b1822; --soft: #1d2723;
+        --ok: #5ac38a; --watch: #e2b23a; --alert: #f0645a; --fault: #d07ad6; --learn: #8e9d97;
+        --f1: #d27623; --f2: #9479ee; --f3: #e2568f;
+        color-scheme: dark;
+    }
+}
+:root[data-theme="dark"] {
+    --bg: #0f1513; --panel: #161e1b; --ink: #e1eae6; --muted: #93a39d; --line: #2a3632;
+    --land: #18221e; --contour: #20302a; --bank: #25342d; --water: #3d80b6; --flow: rgba(255, 255, 255, 0.35);
+    --mud: #a2804d; --accent: #6db3e6; --accent-ink: #0b1822; --soft: #1d2723;
+    --ok: #5ac38a; --watch: #e2b23a; --alert: #f0645a; --fault: #d07ad6; --learn: #8e9d97;
+    --f1: #d27623; --f2: #9479ee; --f3: #e2568f;
+    color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.45;
+    padding-inline: 16px;
+    padding-block: 0 24px;
+}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+button, select, input { font: inherit; color: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, .map-node:focus-visible, .map-factory:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.eyebrow { font-family: var(--font-display); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- top bar */
+.bar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding-block: 12px; margin-inline: -16px; padding-inline: 16px;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; flex-direction: column; min-width: 0; }
+.brand h1 { font-size: 1.6rem; line-height: 1.1; }
+.brand p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.clock { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.clock #clock { font-family: var(--font-data); font-size: 1.15rem; font-weight: 500; }
+.chip-rain { font-size: 0.8rem; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--ink); border: 1px solid var(--line); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+    border: 1px solid var(--line); background: var(--panel); border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; font-weight: 500; line-height: 1.2;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.small { padding: 4px 9px; font-size: 0.85rem; }
+select.btn { padding-right: 6px; }
+
+/* ---------------------------------------------------------------- page grid */
+.layout {
+    display: grid; gap: 20px; padding-top: 16px;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    align-items: start;
+}
+@media (max-width: 1080px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.map-col, .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.panel > h2 { font-size: 1.25rem; margin-bottom: 8px; }
+
+/* node strip */
+.node-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.node-chip {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 8px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; text-align: left;
+    min-width: 0;
+}
+.node-chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.node-chip .id { font-family: var(--font-data); font-weight: 500; }
+.node-chip .what { font-size: 0.8rem; color: var(--muted); max-width: 16ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--learn); }
+.st-NORMAL { --st: var(--ok); }
+.st-WATCH { --st: var(--watch); }
+.st-ALERT { --st: var(--alert); }
+.st-FAULT { --st: var(--fault); }
+.st-BASELINE_BUILDING, .st-OFFLINE { --st: var(--learn); }
+.dot[class*="st-"] { background: var(--st); }
+
+/* map */
+.map-wrap { background: var(--land); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+#map { display: block; width: 100%; height: auto; touch-action: none; user-select: none; }
+.map-help { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.map-land { fill: var(--land); }
+.contour { fill: none; stroke: var(--contour); stroke-width: 1.5; }
+.region { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.14em; fill: var(--muted); opacity: 0.7; }
+.bank { fill: none; stroke: var(--bank); stroke-linecap: round; stroke-linejoin: round; }
+.water { fill: none; stroke: var(--water); stroke-linecap: round; stroke-linejoin: round; }
+.mud { fill: none; stroke: var(--mud); stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.flow { fill: none; stroke: var(--flow); stroke-width: 1.5; stroke-dasharray: 3 14; animation: flow 1.6s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -17; } }
+@media (prefers-reduced-motion: reduce) { .flow, .pipe.on { animation: none; } .pulse { display: none; } }
+.plume line { stroke-linecap: round; }
+.branch-label { font-family: var(--font-data); font-size: 12px; fill: var(--muted); }
+.branch-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: 0.04em; fill: var(--ink); }
+.map-node { cursor: grab; }
+.map-node circle.body { stroke: var(--panel); stroke-width: 3; fill: var(--st, var(--learn)); }
+.map-node text { font-family: var(--font-data); font-size: 13px; font-weight: 500; fill: var(--ink); paint-order: stroke; stroke: var(--land); stroke-width: 4px; }
+.map-node .sel { fill: none; stroke: var(--ink); stroke-width: 2; opacity: 0; }
+.map-node.selected .sel { opacity: 1; }
+.pulse { fill: none; stroke: var(--alert); stroke-width: 2; opacity: 0; }
+.map-node.st-ALERT .pulse { animation: pulse 1.8s ease-out infinite; }
+@keyframes pulse { 0% { r: 12; opacity: 0.8; } 100% { r: 30; opacity: 0; } }
+.map-factory { cursor: grab; }
+.map-factory rect.building { fill: var(--fc); stroke: var(--panel); stroke-width: 2; }
+.map-factory text { font-family: var(--font-display); font-size: 16px; font-weight: 700; fill: #ffffff; }
+.pipe { stroke: var(--muted); stroke-width: 3; stroke-linecap: round; fill: none; }
+.pipe.on { stroke: var(--fc); stroke-width: 4; stroke-dasharray: 6 4; animation: flow 0.9s linear infinite; }
+.outfall { fill: var(--panel); stroke: var(--fc); stroke-width: 2; }
+.dragging { cursor: grabbing; }
+
+/* legend */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .sw { width: 18px; height: 6px; border-radius: 3px; background: var(--c); }
+
+/* factories */
+.factories { display: flex; flex-direction: column; gap: 12px; }
+.factory { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); }
+.factory header { display: flex; align-items: center; gap: 10px; }
+.factory .badge {
+    width: 30px; height: 30px; border-radius: 6px; background: var(--fc); color: #ffffff; flex: none;
+    display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.1rem;
+}
+.factory h3 { font-size: 1.1rem; line-height: 1.1; }
+.factory .where { margin: 0; font-size: 0.82rem; color: var(--muted); }
+.factory .head-text { min-width: 0; flex: 1; }
+.factory .discharge[aria-pressed="true"] { background: var(--fc); color: #ffffff; border-color: var(--fc); }
+.field { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 0.9rem; }
+.field > span:first-child { color: var(--muted); }
+.field select, .field input[type="range"] { width: 100%; min-width: 0; }
+.field select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.field output { font-family: var(--font-data); font-size: 0.85rem; min-width: 6.5ch; text-align: right; }
+input[type="range"] { accent-color: var(--fc, var(--accent)); }
+.factory .note { margin: 0; font-size: 0.84rem; color: var(--muted); }
+.factory .note strong { color: var(--ink); font-weight: 600; }
+details.custom summary { cursor: pointer; font-size: 0.88rem; color: var(--accent); }
+.custom-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin-top: 8px; }
+.custom-grid label { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--muted); }
+.custom-grid input { border: 1px solid var(--line); border-radius: 5px; background: var(--panel); padding: 4px 6px; width: 100%; font-family: var(--font-data); font-size: 0.85rem; }
+
+/* node detail */
+.detail-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.detail-head h2 { font-size: 1.6rem; }
+.detail-head .where { color: var(--muted); font-size: 0.9rem; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; border: 1px solid var(--st); color: var(--ink); }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--st); }
+.label-box { margin-top: 12px; padding: 10px 12px; border-left: 4px solid var(--st, var(--line)); background: var(--soft); border-radius: 0 6px 6px 0; }
+.label-box .lname { font-weight: 600; font-size: 1.05rem; }
+.label-box p { margin: 4px 0 0; font-size: 0.88rem; }
+.label-box .k { color: var(--muted); }
+.conf { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.82rem; color: var(--muted); }
+.conf .track { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; max-width: 180px; }
+.conf .fill { height: 100%; background: var(--st, var(--accent)); }
+table.readings { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
+table.readings th { text-align: left; font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+table.readings td { padding: 5px 6px; border-bottom: 1px solid var(--line); font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+table.readings td:first-child { font-family: var(--font-body); }
+table.readings td.big { color: var(--alert); font-weight: 500; }
+.finding { margin: 12px 0 0; padding: 8px 10px; border-radius: 6px; border: 1px dashed var(--line); font-size: 0.9rem; }
+.finding .k { font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.78rem; color: var(--muted); display: block; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 0.8rem; }
+.tag { padding: 2px 8px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); }
+.tag.fault { border-color: var(--fault); }
+.sparks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin-top: 14px; }
+@media (max-width: 460px) { .sparks { grid-template-columns: minmax(0, 1fr); } }
+.spark { position: relative; min-width: 0; }
+.spark .top { display: flex; justify-content: space-between; gap: 6px; font-size: 0.8rem; }
+.spark .top .v { font-family: var(--font-data); }
+.spark svg { display: block; width: 100%; height: 58px; overflow: visible; }
+.spark .grid { stroke: var(--line); stroke-width: 1; }
+.spark .base { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; }
+.spark .line { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.spark .area { fill: var(--accent); opacity: 0.1; }
+.spark .end { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.spark .cross { stroke: var(--muted); stroke-width: 1; }
+.spark .axis { font-family: var(--font-data); font-size: 10px; fill: var(--muted); }
+.tip {
+    position: absolute; pointer-events: none; z-index: 3; top: 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
+    font-size: 0.78rem; font-family: var(--font-data); white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.spark-key { display: flex; gap: 14px; margin-top: 6px; font-size: 0.78rem; color: var(--muted); }
+.spark-key i { display: inline-block; width: 16px; vertical-align: middle; margin-right: 4px; border-top: 2px solid var(--accent); }
+.spark-key i.b { border-top: 2px dashed var(--muted); }
+.node-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.node-tools label { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--muted); }
+.node-tools select { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 4px 6px; }
+details.serial { margin-top: 14px; }
+details.serial summary { cursor: pointer; font-weight: 500; }
+pre.serial-out {
+    margin: 8px 0 0; padding: 10px 12px; background: #0e1412; color: #d7e0dc; border-radius: 6px;
+    font-family: var(--font-data); font-size: 12px; line-height: 1.35; overflow-x: auto; max-height: 420px;
+}
+.a31 { color: #ff7b72; } .a32 { color: #6fdc8c; } .a33 { color: #f2cc60; } .a35 { color: #e38bf0; } .a90 { color: #8b9994; }
+
+/* logs */
+.below { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 760px) { .below { grid-template-columns: minmax(0, 1fr); } }
+.log { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; font-size: 0.86rem; }
+.log li { display: grid; grid-template-columns: 7.2em minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.log .t { font-family: var(--font-data); color: var(--muted); font-size: 0.8rem; }
+.log .k-alert-on { color: var(--alert); font-weight: 600; }
+.log .k-alert-off { color: var(--ok); }
+.log .k-user, .log .k-weather { color: var(--muted); }
+.log .k-factory { font-weight: 500; }
+.empty { color: var(--muted); font-size: 0.88rem; margin: 0; }
+table.speeds { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+table.speeds th { text-align: left; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 4px 4px; border-bottom: 1px solid var(--line); }
+table.speeds td { padding: 5px 4px; border-bottom: 1px solid var(--line); font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.speed-wrap { overflow-x: auto; }
+.first-seen { margin: 10px 0 0; padding: 0; list-style: none; font-size: 0.86rem; display: flex; flex-direction: column; gap: 6px; }
+.first-seen .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--fc); margin-right: 6px; }
+.flows { margin: 10px 0 0; font-size: 0.82rem; color: var(--muted); }
+.loading { padding: 40px 0; color: var(--muted); }
+</style>
+
+<header class="bar">
+    <div class="brand">
+        <h1>River Node Simulator</h1>
+        <p>The real node code from <span class="num">src/</span>, running in your browser</p>
+    </div>
+    <div class="clock">
+        <span id="clock" class="num" aria-live="off">Day 1 06:00</span>
+        <span id="rain-chip" class="chip-rain" hidden>Raining</span>
+    </div>
+    <div class="controls">
+        <button id="play" class="btn primary" type="button">Pause</button>
+        <label class="eyebrow" for="speed">Speed</label>
+        <select id="speed" class="btn">
+            <option value="1">1 min/s</option>
+            <option value="5" selected>5 min/s</option>
+            <option value="15">15 min/s</option>
+            <option value="30">30 min/s</option>
+            <option value="60">1 h/s</option>
+        </select>
+        <button id="skip1" class="btn" type="button">Skip 1 h</button>
+        <button id="skip12" class="btn" type="button">Skip 12 h</button>
+        <button id="rain" class="btn" type="button">Rain storm</button>
+        <button id="reset" class="btn" type="button">Reset</button>
+    </div>
+</header>
+
+<main class="layout">
+    <section class="map-col" aria-label="River map">
+        <div class="node-strip" id="node-strip"></div>
+        <div class="map-wrap"><svg id="map" viewBox="0 0 1000 580" role="img" aria-label="Map of two streams joining into a main river, with monitoring nodes and factories"></svg></div>
+        <div class="legend" id="legend"></div>
+        <p class="map-help">Drag a node (circle) or a factory (square) to any spot on the rivers. Click a node to see what it's reporting. A moved node relearns normal levels (1 hour) before it can raise alerts.</p>
+        <div class="below">
+            <section class="panel">
+                <h2>Alerts and events</h2>
+                <ul class="log" id="log"></ul>
+            </section>
+            <section class="panel">
+                <h2>How fast is the pollution moving?</h2>
+                <div id="speeds"></div>
+            </section>
+        </div>
+    </section>
+
+    <aside class="side">
+        <section class="panel" aria-labelledby="fac-title">
+            <h2 id="fac-title">Factories</h2>
+            <div class="factories" id="factories"></div>
+        </section>
+        <section class="panel" id="detail" aria-live="polite"><p class="loading">Starting the node code…</p></section>
+    </aside>
+</main>
+
+<script>
+/*__SIM_CORE__*/
+</script>
+<script>
+"use strict";
+const WASM_BASE64 = "__RIVER_NODE_WASM__";
+
+// ---------------------------------------------------------------- map geometry
+// Each branch is a curve on the map. Distances in metres are spread evenly
+// along the curve.
+const PATHS = {
+    stream_a: "M 40 80 C 170 60 250 150 340 185 S 470 255 520 300",
+    stream_b: "M 40 520 C 170 520 240 440 335 420 S 470 350 520 300",
+    main: "M 520 300 C 600 330 660 255 760 275 S 890 380 975 345",
+};
+const WIDTH = { stream_a: 16, stream_b: 18, main: 26 };
+const BRANCH_TITLE = { stream_a: "Stream A", stream_b: "Stream B", main: "Main river" };
+const FACTORY_SIDE = [-1, 1, -1];      // which bank each factory sits on (for the drawing)
+const STATE_TEXT = {
+    BASELINE_BUILDING: "Learning", NORMAL: "Normal", WATCH: "Watch", ALERT: "Alert", FAULT: "Fault", OFFLINE: "Offline",
+};
+const SVG = "http://www.w3.org/2000/svg";
+
+let sim = null;
+let geometry = {};          // per branch: path element, length, sampled points
+let selectedId = "A2";
+let playing = true;
+let minutesPerSecond = 5;
+let carry = 0;
+let lastFrame = null;
+let plumeSegments = [];
+
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs = {}, parent = null) {
+    const e = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (parent) parent.appendChild(e);
+    return e;
+}
+function html(text) {
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ---------------------------------------------------------------- start up
+async function start() {
+    const bytes = Uint8Array.from(atob(WASM_BASE64), (c) => c.charCodeAt(0));
+    const code = await NodeCode.load(bytes);
+    sim = new Simulation(code);
+    buildMap();
+    buildFactories();
+    buildLegend();
+    warmUp(true);
+    bindControls();
+    renderAll();
+    requestAnimationFrame(frame);
+}
+
+// Two hours of clean water so every node has learned "normal", then (first
+// time only) the mine starts so there's something to see straight away
+function warmUp(firstTime) {
+    for (let i = 0; i < 120; i++) sim.tick();
+    sim.log = [];
+    sim.addLog("user", "Nodes finished learning normal levels");
+    if (firstTime) {
+        sim.toggleFactory(0);
+        for (let i = 0; i < 40; i++) sim.tick();
+    }
+}
+
+function frame(time) {
+    if (lastFrame !== null && playing) {
+        carry += (time - lastFrame) / 1000 * minutesPerSecond;
+        let steps = 0;
+        while (carry >= 1 && steps < 90) {
+            sim.tick();
+            carry -= 1;
+            steps++;
+        }
+        if (steps > 0) renderAll();
+        if (carry > 5) carry = 0;
+    }
+    lastFrame = time;
+    requestAnimationFrame(frame);
+}
+
+function skip(minutes) {
+    for (let i = 0; i < minutes; i++) sim.tick();
+    renderAll();
+}
+
+function bindControls() {
+    $("play").addEventListener("click", () => {
+        playing = !playing;
+        $("play").textContent = playing ? "Pause" : "Play";
+    });
+    $("speed").addEventListener("change", (e) => { minutesPerSecond = Number(e.target.value); });
+    $("skip1").addEventListener("click", () => skip(60));
+    $("skip12").addEventListener("click", () => skip(720));
+    $("rain").addEventListener("click", () => { sim.startRain(); renderAll(); });
+    $("reset").addEventListener("click", () => {
+        sim.reset();
+        warmUp(false);
+        buildMap();
+        buildFactories();
+        renderAll();
+    });
+}
+
+// ---------------------------------------------------------------- map
+function buildMap() {
+    const svg = $("map");
+    svg.textContent = "";
+    el("rect", { class: "map-land", x: 0, y: 0, width: 1000, height: 580 }, svg);
+    // A few contour lines for the lie of the land
+    const contours = el("g", {}, svg);
+    for (let i = 0; i < 6; i++) {
+        el("ellipse", { class: "contour", cx: 150 + i * 6, cy: 300, rx: 110 + i * 38, ry: 70 + i * 30 }, contours);
+    }
+    for (let i = 0; i < 4; i++) {
+        el("ellipse", { class: "contour", cx: 840, cy: 120, rx: 60 + i * 34, ry: 40 + i * 22 }, contours);
+    }
+    const labels = [["FOREST", 60, 34], ["FARMLAND", 60, 568], ["HILLS", 120, 306], ["TOWN", 900, 480]];
+    for (const [text, x, y] of labels) {
+        const t = el("text", { class: "region", x, y }, svg);
+        t.textContent = text;
+    }
+    // Town blocks
+    const town = el("g", { opacity: 0.55 }, svg);
+    [[860, 410], [884, 422], [908, 408], [872, 440], [900, 446], [926, 432]].forEach(([x, y]) =>
+        el("rect", { x, y, width: 18, height: 14, rx: 2, fill: "var(--bank)" }, town));
+
+    geometry = {};
+    const riverLayer = el("g", {}, svg);
+    const plumeLayer = el("g", { class: "plume" }, svg);
+    const flowLayer = el("g", {}, svg);
+    for (const b of sim.river.branches) {
+        const d = PATHS[b.name];
+        const w = WIDTH[b.name];
+        el("path", { class: "bank", d, "stroke-width": w + 8 }, riverLayer);
+        el("path", { class: "water", d, "stroke-width": w }, riverLayer);
+        const mud = el("path", { class: "mud", d, "stroke-width": w }, riverLayer);
+        const path = el("path", { class: "flow", d }, flowLayer);
+        const total = path.getTotalLength();
+        const points = [];
+        for (let s = 0; s <= total; s += 3) {
+            const p = path.getPointAtLength(s);
+            points.push({ x: p.x, y: p.y, m: s / total * b.length });
+        }
+        geometry[b.name] = { path, total, points, mud, branch: b };
+    }
+    // Plume: short pieces of river coloured by whose waste is in them
+    plumeSegments = [];
+    for (const b of sim.river.branches) {
+        const g = geometry[b.name];
+        const pieces = Math.round(b.length / 40);
+        for (let i = 0; i < pieces; i++) {
+            const m0 = i / pieces * b.length;
+            const m1 = (i + 1) / pieces * b.length;
+            const a = pointAt(b.name, m0);
+            const c = pointAt(b.name, m1);
+            const line = el("line", { x1: a.x, y1: a.y, x2: c.x, y2: c.y, "stroke-width": WIDTH[b.name] - 4, opacity: 0 }, plumeLayer);
+            plumeSegments.push({ branch: b, m: (m0 + m1) / 2, line });
+        }
+    }
+    // Branch labels
+    const labelSpots = { stream_a: [70, 112], stream_b: [40, 462], main: [700, 222] };
+    for (const b of sim.river.branches) {
+        const [x, y] = labelSpots[b.name];
+        const name = el("text", { class: "branch-name", x, y }, svg);
+        name.textContent = BRANCH_TITLE[b.name];
+        const info = el("text", { class: "branch-label", x, y: y + 16, id: `flow-${b.name}` }, svg);
+        info.textContent = "";
+    }
+    el("g", { id: "factory-layer" }, svg);
+    el("g", { id: "node-layer" }, svg);
+    drawFactories();
+    drawNodes();
+}
+
+function pointAt(branchName, metres) {
+    const g = geometry[branchName];
+    const len = Math.max(0, Math.min(1, metres / g.branch.length)) * g.total;
+    const p = g.path.getPointAtLength(len);
+    const q = g.path.getPointAtLength(Math.min(g.total, len + 1));
+    const angle = Math.atan2(q.y - p.y, q.x - p.x);
+    return { x: p.x, y: p.y, nx: -Math.sin(angle), ny: Math.cos(angle) };
+}
+
+function nearestRiverPoint(x, y) {
+    let best = null;
+    for (const [name, g] of Object.entries(geometry)) {
+        for (const p of g.points) {
+            const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+            if (!best || d < best.d) best = { d, branch: name, m: p.m };
+        }
+    }
+    const b = sim.river.byName[best.branch];
+    best.m = Math.max(0, Math.min(b.length, Math.round(best.m / 10) * 10));
+    return best;
+}
+
+function svgPoint(evt) {
+    const svg = $("map");
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function drawNodes() {
+    const layer = $("node-layer");
+    layer.textContent = "";
+    for (const node of sim.nodes) {
+        const g = el("g", { class: "map-node", tabindex: 0, role: "button", "data-id": node.id,
+                            "aria-label": `Node ${node.id}` }, layer);
+        el("circle", { class: "pulse", r: 12 }, g);
+        el("circle", { class: "sel", r: 18 }, g);
+        el("circle", { class: "body", r: 12 }, g);
+        const t = el("text", { x: 0, y: -20, "text-anchor": "middle" }, g);
+        t.textContent = node.id;
+        placeNode(g, node.branch, node.x);
+        makeDraggable(g, {
+            click: () => select(node.id),
+            move: (spot) => placeNode(g, spot.branch, spot.m),
+            drop: (spot) => { sim.moveNode(node.id, spot.branch, spot.m); renderAll(); },
+        });
+        g.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(node.id); }
+            if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                e.preventDefault();
+                const b = sim.river.byName[node.branch];
+                const x = Math.max(0, Math.min(b.length, node.x + (e.key === "ArrowRight" ? 100 : -100)));
+                sim.moveNode(node.id, node.branch, x);
+                renderAll();
+                layer.querySelector(`[data-id="${node.id}"]`).focus();
+            }
+        });
+    }
+}
+
+function placeNode(g, branch, m) {
+    const p = pointAt(branch, m);
+    g.setAttribute("transform", `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
+}
+
+function drawFactories() {
+    const layer = $("factory-layer");
+    layer.textContent = "";
+    sim.factories.forEach((fac, k) => {
+        const g = el("g", { class: "map-factory", tabindex: 0, role: "button",
+                            "aria-label": `${fac.name} outfall`, style: `--fc: var(--f${k + 1})` }, layer);
+        const pipe = el("line", { class: "pipe" }, g);
+        el("circle", { class: "outfall", r: 5 }, g);
+        const building = el("g", {}, g);
+        el("rect", { x: -9, y: -26, width: 7, height: 12, fill: "var(--muted)" }, building);
+        el("rect", { class: "building", x: -16, y: -14, width: 32, height: 26, rx: 4 }, building);
+        const t = el("text", { x: 0, y: 5, "text-anchor": "middle" }, building);
+        t.textContent = String(k + 1);
+        placeFactory(g, k, fac.branch, fac.x);
+        makeDraggable(g, {
+            click: () => {},
+            move: (spot) => placeFactory(g, k, spot.branch, spot.m),
+            drop: (spot) => { sim.moveFactory(k, spot.branch, spot.m); renderAll(); },
+        });
+    });
+}
+
+function placeFactory(g, k, branch, m) {
+    const p = pointAt(branch, m);
+    const side = FACTORY_SIDE[k];
+    const off = WIDTH[branch] / 2 + 34;
+    const bx = p.x + p.nx * off * side;
+    const by = p.y + p.ny * off * side;
+    const [pipe, outfall, building] = g.children;
+    pipe.setAttribute("x1", bx); pipe.setAttribute("y1", by);
+    pipe.setAttribute("x2", p.x); pipe.setAttribute("y2", p.y);
+    outfall.setAttribute("cx", p.x); outfall.setAttribute("cy", p.y);
+    building.setAttribute("transform", `translate(${bx.toFixed(1)} ${by.toFixed(1)})`);
+}
+
+// Drag along the rivers: the marker snaps to the nearest spot on any river
+function makeDraggable(g, handlers) {
+    let start = null;
+    let spot = null;
+    g.addEventListener("pointerdown", (e) => {
+        start = { x: e.clientX, y: e.clientY, moved: false };
+        g.setPointerCapture(e.pointerId);
+        g.classList.add("dragging");
+    });
+    g.addEventListener("pointermove", (e) => {
+        if (!start) return;
+        if (!start.moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+        start.moved = true;
+        const p = svgPoint(e);
+        spot = nearestRiverPoint(p.x, p.y);
+        handlers.move(spot);
+    });
+    const end = () => {
+        if (!start) return;
+        g.classList.remove("dragging");
+        if (start.moved && spot) handlers.drop(spot); else handlers.click();
+        start = null;
+        spot = null;
+    };
+    g.addEventListener("pointerup", end);
+    g.addEventListener("pointercancel", end);
+}
+
+function renderMap() {
+    const rain = sim.rain;
+    for (const [name, g] of Object.entries(geometry)) {
+        g.mud.style.opacity = (rain * 0.55).toFixed(2);
+        const b = g.branch;
+        const flowText = $(`flow-${name}`);
+        flowText.textContent = `${sim.river.flowOf(b, rain).toFixed(1)} m³/s · ${sim.river.speedOf(b, rain).toFixed(2)} m/s`;
+    }
+    // Colour each piece of river by the factory whose waste is strongest there
+    for (const seg of plumeSegments) {
+        let total = 0, best = -1, bestF = 0;
+        for (let k = 0; k < sim.factories.length; k++) {
+            const f = sim.river.tracerAt(seg.branch, seg.m, "f", k);
+            total += f;
+            if (f > bestF) { bestF = f; best = k; }
+        }
+        if (total < 0.003 || best < 0) {
+            seg.line.setAttribute("opacity", 0);
+        } else {
+            const strength = Math.min(1, Math.log10(total / 0.003) / 2);
+            seg.line.setAttribute("opacity", (0.3 + 0.65 * strength).toFixed(2));
+            seg.line.setAttribute("stroke", `var(--f${best + 1})`);
+        }
+    }
+    for (const g of $("node-layer").children) {
+        const node = sim.nodes.find((n) => n.id === g.dataset.id);
+        if (!node) continue;
+        const state = nodeState(node);
+        g.setAttribute("class", `map-node st-${state}${node.id === selectedId ? " selected" : ""}`);
+        g.setAttribute("aria-label", `Node ${node.id}: ${STATE_TEXT[state]}`);
+    }
+    $("factory-layer").querySelectorAll(".pipe").forEach((pipe, k) => {
+        pipe.setAttribute("class", sim.factories[k].on ? "pipe on" : "pipe");
+    });
+}
+
+function nodeState(node) {
+    if (node.fault === "offline") return "OFFLINE";
+    if (!node.report) return "BASELINE_BUILDING";
+    return node.report.state;
+}
+
+function buildLegend() {
+    const items = [
+        ["var(--ok)", "Normal"], ["var(--watch)", "Watch"], ["var(--alert)", "Alert"],
+        ["var(--fault)", "Sensor fault"], ["var(--learn)", "Learning / offline"],
+    ];
+    const parts = items.map(([c, t]) => `<span><i class="dot" style="background:${c}"></i>${t}</span>`);
+    sim.factories.forEach((f, k) => parts.push(`<span><i class="sw" style="--c: var(--f${k + 1})"></i>${f.name} waste</span>`));
+    $("legend").innerHTML = parts.join("");
+}
+
+// ---------------------------------------------------------------- factories
+function buildFactories() {
+    const box = $("factories");
+    box.textContent = "";
+    sim.factories.forEach((fac, k) => {
+        const card = document.createElement("article");
+        card.className = "factory";
+        card.style.setProperty("--fc", `var(--f${k + 1})`);
+        const options = Object.entries(WASTE_TYPES)
+            .map(([key, w]) => `<option value="${key}"${key === fac.type ? " selected" : ""}>${html(w.name)}</option>`).join("");
+        card.innerHTML = `
+            <header>
+                <span class="badge">${k + 1}</span>
+                <div class="head-text"><h3>${html(fac.name)}</h3><p class="where" id="fac-where-${k}"></p></div>
+                <button class="btn small discharge" id="fac-on-${k}" type="button" aria-pressed="false">Start</button>
+            </header>
+            <label class="field"><span>Waste</span><select id="fac-type-${k}">${options}</select><span></span></label>
+            <label class="field"><span>Discharge</span><input type="range" id="fac-flow-${k}" min="0" max="2000" step="10" value="${fac.flowLps}"><output id="fac-flow-out-${k}">${fac.flowLps} L/s</output></label>
+            <p class="note" id="fac-note-${k}"></p>
+            <details class="custom"><summary>Customise the waste</summary><div class="custom-grid" id="fac-custom-${k}"></div></details>`;
+        box.appendChild(card);
+        $(`fac-on-${k}`).addEventListener("click", () => { sim.toggleFactory(k); renderAll(); });
+        $(`fac-type-${k}`).addEventListener("change", (e) => {
+            sim.setFactoryType(k, e.target.value);
+            $(`fac-flow-${k}`).value = sim.factories[k].flowLps;
+            fillCustom(k);
+            renderAll();
+        });
+        $(`fac-flow-${k}`).addEventListener("input", (e) => {
+            sim.factories[k].flowLps = Number(e.target.value);
+            renderFactories();
+        });
+        fillCustom(k);
+    });
+    renderFactories();
+}
+
+function fillCustom(k) {
+    const w = sim.factories[k].waste;
+    const fields = [
+        ["ph", "pH", 0.1, w.ph], ["tds", "TDS (mg/L)", 10, w.tds],
+        ["ntu", "Turbidity (NTU)", 1, w.ntu], ["temp", "Temp (°C, blank = river)", 0.5, w.temp ?? ""],
+    ];
+    const grid = $(`fac-custom-${k}`);
+    grid.innerHTML = fields.map(([key, label, step, value]) =>
+        `<label>${label}<input type="number" id="fac-${key}-${k}" step="${step}" value="${value}"></label>`).join("");
+    for (const [key] of fields) {
+        $(`fac-${key}-${k}`).addEventListener("change", (e) => {
+            const v = e.target.value.trim();
+            if (key === "temp") {
+                sim.factories[k].waste.temp = v === "" ? null : Number(v);
+            } else if (v !== "" && Number.isFinite(Number(v))) {
+                let n = Number(v);
+                if (key === "ph") n = Math.max(0, Math.min(14, n));
+                if (key !== "ph") n = Math.max(0, n);
+                sim.factories[k].waste[key] = n;
+                e.target.value = n;
+            }
+            renderFactories();
+        });
+    }
+}
+
+function renderFactories() {
+    sim.factories.forEach((fac, k) => {
+        const b = sim.river.byName[fac.branch];
+        $(`fac-where-${k}`).textContent = `${BRANCH_TITLE[fac.branch]}, ${fac.x} m down`;
+        const on = $(`fac-on-${k}`);
+        on.textContent = fac.on ? "Stop" : "Start";
+        on.setAttribute("aria-pressed", fac.on ? "true" : "false");
+        $(`fac-flow-out-${k}`).textContent = `${fac.flowLps} L/s`;
+        const q = sim.river.flowOf(b, sim.rain);
+        const share = fac.flowLps / 1000 / (q + fac.flowLps / 1000) * 100;
+        let note = `At full mix this is <strong>${share.toFixed(share < 10 ? 1 : 0)}%</strong> of the ${BRANCH_TITLE[fac.branch].toLowerCase()}'s water.`;
+        if (fac.on) {
+            note += ` Discharging for <strong>${formatDuration(sim.minute - fac.startedMin)}</strong>.`;
+        } else {
+            note += " Not discharging.";
+        }
+        if (fac.type === "farm") note += " Nutrient alerts need 12 h of clean readings first, then show over the next day-night cycle (use Skip 12 h).";
+        $(`fac-note-${k}`).innerHTML = note;
+    });
+}
+
+// ---------------------------------------------------------------- selected node
+function select(id) {
+    selectedId = id;
+    renderAll();
+}
+
+function renderStrip() {
+    const strip = $("node-strip");
+    strip.innerHTML = sim.nodes.map((node) => {
+        const state = nodeState(node);
+        let what = STATE_TEXT[state];
+        if (node.report && node.report.label !== 0 && state !== "OFFLINE") {
+            what = sim.labels[node.report.label].short;
+        }
+        return `<button class="node-chip" type="button" data-id="${node.id}" aria-pressed="${node.id === selectedId}">
+            <span class="dot st-${state}"></span><span class="id">${node.id}</span><span class="what">${html(what)}</span></button>`;
+    }).join("") + `<button class="btn small" type="button" id="add-node">Add node</button>`;
+    strip.querySelectorAll(".node-chip").forEach((b) => b.addEventListener("click", () => select(b.dataset.id)));
+    $("add-node").addEventListener("click", () => {
+        const node = sim.addNode(null, "main", 3300, "new node");
+        if (node) { selectedId = node.id; drawNodes(); renderAll(); }
+    });
+}
+
+function formatReading(sensor, value) {
+    if (value === null || value === undefined) return "--";
+    if (sensor === 0) return value.toFixed(2);
+    if (sensor === 1) return `${value.toFixed(0)} mg/L`;
+    if (sensor === 2) return `${value.toFixed(1)} NTU`;
+    return `${value.toFixed(1)} °C`;
+}
+
+// Same way src/display.cpp shows the change from normal
+function formatChange(sensor, now, base) {
+    if (now === null || base === null) return { text: "--", big: false };
+    if (sensor === 0) { const d = now - base; return { text: `${d >= 0 ? "+" : ""}${d.toFixed(2)}`, big: Math.abs(d) >= 0.5 }; }
+    if (sensor === 1) { const b = Math.max(1, base); const p = (now - b) / b * 100; return { text: `${p >= 0 ? "+" : ""}${p.toFixed(0)}%`, big: Math.abs(p) >= 15 }; }
+    if (sensor === 2) { const r = now / Math.max(1, base); return { text: `×${r.toFixed(1)}`, big: r >= 1.5 }; }
+    const d = now - base;
+    return { text: `${d >= 0 ? "+" : ""}${d.toFixed(1)} °C`, big: Math.abs(d) >= 1 };
+}
+
+const SENSOR_NAMES = ["pH", "TDS", "Turbidity", "Water temp"];
+const FAULT_TEXT = { NO_READING: "no reading", OUT_OF_RANGE: "reading out of range", FLATLINE: "reading stuck for 60+ min", JUMP: "jumped more than 3 °C in a minute" };
+
+function renderDetail() {
+    const box = $("detail");
+    let node = sim.nodes.find((n) => n.id === selectedId);
+    if (!node) { node = sim.nodes[0]; selectedId = node.id; }
+    const state = nodeState(node);
+    const r = node.report;
+    const serialOpen = box.querySelector("details.serial")?.open ?? false;
+    const faultOptions = Object.entries(FAULTS)
+        .map(([key, text]) => `<option value="${key}"${key === node.fault ? " selected" : ""}>${html(text)}</option>`).join("");
+
+    let body = "";
+    if (state === "OFFLINE") {
+        body = `<p class="empty">This node's radio is off, so the other nodes treat its last report as out of date after ${sim.code.setting(4)} minutes.</p>`;
+    } else if (!r || state === "BASELINE_BUILDING") {
+        const learned = r ? r.learned : 0;
+        const needed = r ? r.needed : sim.code.setting(0);
+        body = `<p class="empty">Learning normal levels at this spot: <span class="num">${learned}/${needed}</span> min. It can't raise alerts until it knows what normal looks like here.</p>`;
+    }
+    if (r && state !== "OFFLINE" && state !== "BASELINE_BUILDING") {
+        const info = sim.labels[r.label];
+        if (r.label !== 0 || state === "FAULT") {
+            const conf = info.category === 1 || info.category === 2
+                ? `<div class="conf">Confidence <span class="track"><span class="fill" style="width:${(r.conf * 100).toFixed(0)}%"></span></span><span class="num">${r.conf.toFixed(2)}</span></div>` : "";
+            body += `<div class="label-box st-${state}">
+                <div class="lname">${html(info.name)}</div>${conf}
+                ${info.meaning ? `<p><span class="k">What it means:</span> ${html(info.meaning)}</p>` : ""}
+                ${info.pollutants ? `<p><span class="k">Possible pollutants:</span> ${html(info.pollutants)}</p>` : ""}
+            </div>`;
+        } else {
+            body += `<p class="empty" style="margin-top:10px">Water matches this spot's normal levels.</p>`;
+        }
+    }
+    if (r && state !== "BASELINE_BUILDING") {
+        const rows = [0, 1, 2, 3].map((s) => {
+            const ch = formatChange(s, r.now[s], r.base[s]);
+            return `<tr><td>${SENSOR_NAMES[s]}</td><td>${formatReading(s, r.now[s])}</td><td>${formatReading(s, r.base[s])}</td><td class="${ch.big ? "big" : ""}">${ch.text}</td></tr>`;
+        }).join("");
+        body += `<table class="readings"><thead><tr><th>Reading</th><th>Now</th><th>Normal</th><th>Change</th></tr></thead><tbody>${rows}</tbody></table>`;
+        if (r.finding_text) {
+            body += `<p class="finding"><span class="k">Compared with the other nodes</span>${html(r.finding_text)}</p>`;
+        }
+        const tags = [];
+        r.also.forEach((id) => tags.push(`<span class="tag">Also: ${html(sim.labels[id].short)}</span>`));
+        r.faults.forEach((f, s) => { if (f !== "NONE") tags.push(`<span class="tag fault">${SENSOR_NAMES[s]}: ${FAULT_TEXT[f] || f}</span>`); });
+        if (r.recal) tags.push(`<span class="tag fault">pH probe drifting: recalibrate</span>`);
+        if (tags.length) body += `<div class="tags">${tags.join("")}</div>`;
+        body += `<div class="sparks" id="sparks"></div>
+            <div class="spark-key"><span><i></i>Reading (1-min median)</span><span><i class="b"></i>Normal (baseline)</span><span>Last 6 h</span></div>`;
+    }
+
+    box.innerHTML = `
+        <div class="detail-head">
+            <h2>${node.id}</h2>
+            <span class="pill st-${state}">${STATE_TEXT[state]}</span>
+            <span class="where">${BRANCH_TITLE[node.branch]}, ${node.x} m down${node.place ? ` · ${html(node.place)}` : ""}</span>
+        </div>
+        ${body}
+        <div class="node-tools">
+            <label for="fault">Sensors <select id="fault">${faultOptions}</select></label>
+            <button class="btn small" type="button" id="remove-node">Remove node</button>
+        </div>
+        <details class="serial"${serialOpen ? " open" : ""}>
+            <summary>Serial monitor: what ${node.id} prints</summary>
+            <pre class="serial-out" id="serial"></pre>
+        </details>`;
+    $("fault").addEventListener("change", (e) => { sim.setFault(node.id, e.target.value); renderAll(); });
+    $("remove-node").addEventListener("click", () => {
+        if (sim.removeNode(node.id)) { selectedId = sim.nodes[0].id; drawNodes(); renderAll(); }
+    });
+    box.querySelector("details.serial").addEventListener("toggle", renderSerial);
+    renderSparks(node);
+    renderSerial();
+}
+
+function renderSerial() {
+    const details = document.querySelector("#detail details.serial");
+    if (!details || !details.open) return;
+    const node = sim.nodes.find((n) => n.id === selectedId);
+    if (!node) return;
+    const text = node.fault === "offline" ? "(no output: node is offline)\n" : sim.code.serial(node.id, sim.minute);
+    // Turn the colour codes the board prints into coloured text
+    let out = "";
+    let open = false;
+    for (const part of html(text).split(/\x1b\[(\d+)m/)) {
+        if (/^\d+$/.test(part)) {
+            if (open) { out += "</span>"; open = false; }
+            if (part !== "0") { out += `<span class="a${part}">`; open = true; }
+        } else {
+            out += part;
+        }
+    }
+    if (open) out += "</span>";
+    $("serial").innerHTML = out;
+}
+
+// Small line charts of the last 6 hours
+function renderSparks(node) {
+    const box = $("sparks");
+    if (!box) return;
+    const hist = node.history.slice(-360);
+    const specs = [
+        { s: 0, name: "pH", fmt: (v) => v.toFixed(2) },
+        { s: 1, name: "TDS mg/L", fmt: (v) => v.toFixed(0) },
+        { s: 2, name: "Turbidity NTU", fmt: (v) => v.toFixed(1) },
+        { s: 3, name: "Water temp °C", fmt: (v) => v.toFixed(1) },
+    ];
+    box.innerHTML = "";
+    for (const spec of specs) {
+        const vals = hist.map((h) => h.now[spec.s]);
+        const bases = hist.map((h) => h.base[spec.s]);
+        const all = vals.concat(bases).filter((v) => v !== null && v !== undefined);
+        const wrap = document.createElement("div");
+        wrap.className = "spark";
+        const last = vals.length ? vals[vals.length - 1] : null;
+        wrap.innerHTML = `<div class="top"><span>${spec.name}</span><span class="v">${last === null ? "--" : spec.fmt(last)}</span></div>`;
+        box.appendChild(wrap);
+        if (all.length < 2) continue;
+        let lo = Math.min(...all), hi = Math.max(...all);
+        const pad = (hi - lo) * 0.12 || Math.max(0.05, Math.abs(hi) * 0.02);
+        lo -= pad; hi += pad;
+        const W = 300, H = 58, n = 360;
+        const X = (i) => (i + (n - hist.length)) / (n - 1) * W;
+        const Y = (v) => H - (v - lo) / (hi - lo) * H;
+        const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img",
+                                "aria-label": `${spec.name} over the last 6 hours` }, wrap);
+        el("line", { class: "grid", x1: 0, x2: W, y1: H, y2: H }, svg);
+        el("line", { class: "grid", x1: 0, x2: W, y1: 0, y2: 0 }, svg);
+        const pts = [];
+        vals.forEach((v, i) => { if (v !== null) pts.push(`${X(i).toFixed(1)},${Y(v).toFixed(1)}`); });
+        const bpts = [];
+        bases.forEach((v, i) => { if (v !== null) bpts.push(`${X(i).toFixed(1)},${Y(v).toFixed(1)}`); });
+        if (pts.length > 1) {
+            const firstX = pts[0].split(",")[0], lastX = pts[pts.length - 1].split(",")[0];
+            el("polygon", { class: "area", points: `${firstX},${H} ${pts.join(" ")} ${lastX},${H}` }, svg);
+            el("polyline", { class: "line", points: pts.join(" "), "vector-effect": "non-scaling-stroke" }, svg);
+        }
+        if (bpts.length > 1) el("polyline", { class: "base", points: bpts.join(" "), "vector-effect": "non-scaling-stroke" }, svg);
+        const axis = document.createElement("div");
+        axis.className = "top";
+        axis.innerHTML = `<span class="axis num" style="font-size:10px;color:var(--muted)">${spec.fmt(lo)}–${spec.fmt(hi)}</span>`;
+        wrap.appendChild(axis);
+        // Hover: crosshair and value
+        const cross = el("line", { class: "cross", y1: 0, y2: H, opacity: 0, "vector-effect": "non-scaling-stroke" }, svg);
+        const tip = document.createElement("div");
+        tip.className = "tip";
+        tip.hidden = true;
+        wrap.appendChild(tip);
+        svg.addEventListener("pointermove", (e) => {
+            const rect = svg.getBoundingClientRect();
+            const fx = (e.clientX - rect.left) / rect.width;
+            const i = Math.round(fx * (n - 1)) - (n - hist.length);
+            if (i < 0 || i >= hist.length) { tip.hidden = true; cross.setAttribute("opacity", 0); return; }
+            const h = hist[i];
+            cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("opacity", 1);
+            const v = h.now[spec.s], b = h.base[spec.s];
+            tip.innerHTML = `${sim.clock(h.minute).slice(6)} · ${v === null ? "--" : spec.fmt(v)}${b === null ? "" : ` (normal ${spec.fmt(b)})`}`;
+            tip.hidden = false;
+            tip.style.left = `${Math.min(rect.width - tip.offsetWidth, Math.max(0, fx * rect.width - tip.offsetWidth / 2))}px`;
+        });
+        svg.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("opacity", 0); });
+    }
+}
+
+// ---------------------------------------------------------------- logs
+function renderLog() {
+    const items = sim.log.slice(0, 80);
+    if (!items.length) { $("log").innerHTML = `<li><span class="empty">Nothing yet.</span></li>`; return; }
+    $("log").innerHTML = items.map((l) => {
+        const style = l.factory !== undefined ? ` style="color: var(--f${l.factory + 1})"` : "";
+        return `<li><span class="t">${l.time.replace("Day ", "D")}</span><span class="k-${l.kind}"${style}>${html(l.text)}</span></li>`;
+    }).join("");
+}
+
+function renderSpeeds() {
+    let out = "";
+    const est = sim.speedEstimates.filter((e, i, arr) =>
+        arr.findIndex((o) => o.from === e.from && o.to === e.to) === i).slice(0, 6);
+    if (est.length) {
+        out += `<p class="empty" style="margin-bottom:6px">Worked out from when each node's alert turned on:</p>
+        <div class="speed-wrap"><table class="speeds"><thead><tr><th>From → to</th><th>Distance</th><th>Took</th><th>Speed</th></tr></thead><tbody>`;
+        for (const e of est) {
+            out += `<tr><td>${e.from} → ${e.to}</td><td>${(e.metres / 1000).toFixed(2)} km</td><td>${formatDuration(e.minutes)}</td><td>${e.speed.toFixed(2)} m/s</td></tr>`;
+        }
+        out += `</tbody></table></div>`;
+    } else {
+        out += `<p class="empty">Start a factory's discharge. Once two nodes along the river have both picked it up, their alert times give the plume's speed here.</p>`;
+    }
+    const seen = [];
+    sim.factories.forEach((fac, k) => {
+        const firsts = Object.entries(fac.firstSeen).sort((a, b) => a[1].minutes - b[1].minutes);
+        if (!firsts.length) return;
+        const [id, s] = firsts[0];
+        seen.push(`<li style="--fc: var(--f${k + 1})"><span class="sw"></span>${html(fac.name)}: first alert at <strong>${id}</strong>, ${(s.metres / 1000).toFixed(2)} km downstream, <strong>${formatDuration(s.minutes)}</strong> after it started (${html(sim.labels[s.label].short)})</li>`);
+    });
+    if (seen.length) out += `<ul class="first-seen">${seen.join("")}</ul>`;
+    const rain = sim.rain;
+    const flows = sim.river.branches.map((b) => `${BRANCH_TITLE[b.name]} ${sim.river.speedOf(b, rain).toFixed(2)} m/s`).join(" · ");
+    out += `<p class="flows">Actual water speed: ${flows}. Alerts need ${sim.code.setting(1)} minutes in a row to turn on, so each detection time includes that delay.</p>`;
+    $("speeds").innerHTML = out;
+}
+
+function formatDuration(min) {
+    const h = Math.floor(min / 60), m = min % 60;
+    return h ? `${h} h ${m} min` : `${m} min`;
+}
+
+function renderAll() {
+    $("clock").textContent = sim.clock();
+    $("rain-chip").hidden = sim.rain <= 0;
+    renderMap();
+    renderStrip();
+    renderFactories();
+    renderDetail();
+    renderLog();
+    renderSpeeds();
+}
+
+start().catch((err) => {
+    $("detail").innerHTML = `<p class="empty">The node code couldn't start in this browser (${html(err.message)}). It needs a browser with WebAssembly support.</p>`;
+});
+</script>
