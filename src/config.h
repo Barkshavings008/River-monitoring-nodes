@@ -10,7 +10,7 @@
 #define DEMO_MODE 1          // 1 = 10 min baseline window, 5 min warm-up (quick testing)
 #endif
 #ifndef SIMULATE
-#define SIMULATE 1           // 1 = scripted fake readings instead of the real sensors
+#define SIMULATE 0           // 1 = scripted fake readings instead of the real sensors
 #endif
 #define SIM_FAST 1           // SIMULATE only: one "minute" only lasts 10 s so the demo runs quickly
 #ifndef SIM_REMOTE_NODES
@@ -33,7 +33,7 @@
 #define PH_PIN 34
 #define TDS_PIN 33
 #define TURBIDITY_PIN 32
-#define ONEWIRE_PIN 35       // DS18B20 data pin, needs a 4.7k pull-up to 3.3 V
+#define ONEWIRE_PIN 4        // DS18B20 data pin, needs a 4.7k pull-up to 3.3 V
 #define ADC_SAMPLES 16       // number of ADC reads averaged for each sample
 
 // Voltage dividers: V_sensor = V_adc * ratio. The pH module (Logo-Rnaenaor V2.0)
