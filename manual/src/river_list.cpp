@@ -19,10 +19,16 @@ void copy_text(char *destination, const char *source, int size);
 // Makes a new node and puts it in the right spot for its distance (after any
 // nodes already at that distance). If the id is empty or already used, or
 // there's no memory left, nothing is added and a warning is printed.
-// Ids longer than 7 characters and places longer than 19 get cut short.
+// Ids can be up to 7 characters (longer ones are refused, so two ids can never
+// end up the same after being cut short). Places longer than 19 get cut short.
 struct River_node *add_node(struct River_node *head, const char *id, float distance_m, const char *place) {
     if (id == NULL || id[0] == '\0') {
         Serial.println("add_node: the id can't be empty");
+        return head;
+    }
+    if (strlen(id) > NODE_ID_LEN - 1) {
+        Serial.print("add_node: ids can be at most 7 characters: ");
+        Serial.println(id);
         return head;
     }
     if (find_node(head, id) != NULL) {

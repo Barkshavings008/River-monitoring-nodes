@@ -247,6 +247,17 @@ void test_top_node_has_nothing_upstream(void) {
     TEST_ASSERT_FALSE(a.has_upstream);
 }
 
+void test_too_long_names_are_refused(void) {
+    network_clear(&network);
+    TEST_ASSERT_EQUAL(-1, network_add_branch(&network, "a_very_long_name", 0, NULL, 0));
+    TEST_ASSERT_EQUAL(0, network_add_branch(&network, "main", 0, NULL, 0));
+    // 7 characters is fine, 8 would have been cut short and clashed
+    TEST_ASSERT_TRUE(network_add_node(&network, "RIVERN1", 0, "x", false));
+    TEST_ASSERT_FALSE(network_add_node(&network, "RIVERNODE1", 10, "x", false));
+    TEST_ASSERT_FALSE(network_add_node(&network, "RIVERNODE2", 20, "x", false));
+    TEST_ASSERT_EQUAL(1, network.num_nodes);
+}
+
 void test_move_node_to_other_branch(void) {
     build_branched();
     TEST_ASSERT_TRUE(network_move_node_to_branch(&network, "M2", "stream_b", 100));
@@ -274,6 +285,7 @@ int main(void) {
     RUN_TEST(test_stream_joining_between_nodes);
     RUN_TEST(test_stale_stream_node_looks_further_up);
     RUN_TEST(test_top_node_has_nothing_upstream);
+    RUN_TEST(test_too_long_names_are_refused);
     RUN_TEST(test_move_node_to_other_branch);
     return UNITY_END();
 }
