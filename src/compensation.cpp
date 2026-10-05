@@ -60,7 +60,7 @@ float ph_from_voltage(float volts, float temp_c) {
     return 7.0f + (volts - PH_V7) * slope * temp_scale;
 }
 
-// TSW-10 turbidity: scale to the clear water voltage, use the curve, then
+// TS-300B turbidity: scale to the clear water voltage, use the curve, then
 // keep it between 0 and TURB_MAX_NTU
 float ntu_from_voltage(float volts) {
     float v = volts * TURB_V_CURVE_CLEAR / TURB_V_CLEAR;

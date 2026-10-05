@@ -16,6 +16,7 @@ struct Node_engine {
     struct Persistence persistence;
     float tds_history[STEP_WINDOW_MIN];           // 1 min TDS values for the step change check
     int num_tds_history;
+    int hold_minutes_left;                        // baseline stays frozen until this reaches 0
     int tds_history_head;
 };
 

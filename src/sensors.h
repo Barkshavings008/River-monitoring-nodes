@@ -1,5 +1,6 @@
 #pragma once
-// The real sensors: pH module, STJF TDS Meter V1.0, TSW-10 turbidity and DS18B20.
+// The real sensors: Logo-Rnaenaor V2.0 pH module, STJF TDS Meter V1.0, TS-300B
+// turbidity and DS18B20.
 #include "types.h"
 
 // Voltages at the sensor outputs (divider already undone), for calibrating

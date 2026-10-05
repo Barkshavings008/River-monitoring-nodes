@@ -24,6 +24,7 @@ enum Label_id {
     LBL_THERMAL,
     LBL_SEDIMENT,
     LBL_SALT,
+    LBL_EFFLUENT,
     // B: filter
     LBL_RAIN,
     LBL_FAULT,
@@ -66,7 +67,7 @@ struct Rule_result {
     float confidence;
 };
 
-#define MAX_ALSO 8
+#define MAX_ALSO 10  // worst case: 3 other pollution labels + 5 watch labels + rain
 
 // One node's summary of the last minute. This is what gets printed, and what
 // a node would send to the other nodes over LoRa/WiFi.

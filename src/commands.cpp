@@ -98,7 +98,8 @@ void add_command(struct River_network *network, unsigned long now_min) {
     if (network_add_node(network, id, metres, place_name, false)) {
         snprintf(message, MESSAGE_SIZE, "Added %s at %u m", id, (unsigned)metres);
     } else {
-        snprintf(message, MESSAGE_SIZE, "Could not add %s (duplicate id or network full)", id);
+        snprintf(message, MESSAGE_SIZE, "Could not add %s (id over %d characters, already used, or network full)",
+                 id, NODE_ID_LEN - 1);
     }
     print_message(message);
     print_network_list(network, now_min);
@@ -143,15 +144,17 @@ void move_command(struct River_network *network, unsigned long now_min) {
 }
 
 // Turns text like "1500" into a number. Returns false if it's empty or not a number.
+// Only plain digits are accepted (no minus sign), and at most 9 of them so the
+// number can't overflow.
 bool read_metres(const char *text, unsigned long *metres) {
-    if (text == NULL || text[0] == '\0') {
+    if (text == NULL || text[0] == '\0' || strlen(text) > 9) {
         return false;
     }
-    char *end;
-    unsigned long value = strtoul(text, &end, 10); // end points to the first char that wasn't a digit
-    if (end[0] != '\0') {
-        return false;
+    for (int i = 0; text[i] != '\0'; i++) {
+        if (text[i] < '0' || text[i] > '9') {
+            return false;
+        }
     }
-    *metres = value;
+    *metres = strtoul(text, NULL, 10);
     return true;
 }

@@ -45,6 +45,7 @@ struct Rule_result rule_nutrients(struct Rule_inputs in);
 struct Rule_result rule_thermal(struct Rule_inputs in);
 struct Rule_result rule_sediment(struct Rule_inputs in);
 struct Rule_result rule_salt(struct Rule_inputs in);
+struct Rule_result rule_effluent(struct Rule_inputs in);
 
 void fault_tracker_reset(struct Fault_tracker *tracker);
 enum Fault_code check_range(int sensor, float value);

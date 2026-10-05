@@ -65,6 +65,15 @@ struct Label_info get_label_info(enum Label_id id) {
         info.category = CAT_WATCH;
         info.pollutants = "Sodium chloride; seawater magnesium and sulfate; salty groundwater";
         info.meaning = "Tide pushing upstream, road salt, or salty groundwater.";
+    } else if (id == LBL_EFFLUENT) {
+        info.code = "LIKELY_EFFLUENT_OR_FERTILISER";
+        info.name = "Likely treated wastewater or fertiliser runoff";
+        info.short_name = "Likely effluent / fertiliser";
+        info.category = CAT_WATCH;
+        info.pollutants = "Nitrate, ammonium, phosphate, dissolved salts (chloride, sulfate), "
+                          "detergent and medicine residues";
+        info.meaning = "Clear water carrying extra dissolved salts and a slightly lower pH: treated "
+                       "sewage or fertiliser washing in. Can feed algae if it keeps up.";
     } else if (id == LBL_RAIN) {
         info.code = "LIKELY_RAIN_EVENT";
         info.name = "Likely rain / stormwater event";

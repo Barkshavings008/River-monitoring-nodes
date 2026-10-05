@@ -63,7 +63,7 @@ the new head, so use it like `head = add_node(head, ...);`.
 
 | Function | What it does |
 |---|---|
-| `head = add_node(head, "N1", 1000, "left bank")` | Adds a node in the right place (ignored if the id is already used) |
+| `head = add_node(head, "N1", 1000, "left bank")` | Adds a node in the right place (ignored if the id is already used or over 7 characters) |
 | `head = delete_node(head, "N1")` | Removes a node and frees it |
 | `head = move_node(head, "N1", 1500)` | Changes a node's distance, keeping its readings |
 | `head = delete_all_nodes(head)` | Frees every node (gives back `NULL`) |

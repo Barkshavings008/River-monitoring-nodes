@@ -23,6 +23,7 @@ void engine_begin(struct Node_engine *engine, const char *id) {
     fault_tracker_reset(&engine->faults);
     persistence_reset(&engine->persistence);
     engine->num_tds_history = 0;
+    engine->hold_minutes_left = 0;
     engine->tds_history_head = 0;
 }
 
@@ -105,7 +106,14 @@ int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
 
     // Keep pollution (and rain) out of "normal": don't learn while any pattern
     // is seen or any label is on. Faulty sensors are never learned.
-    bool frozen = out.num_hits > 0 || persistence_any_active(&engine->persistence);
+    // After everything clears, it stays frozen for BASELINE_HOLD_MIN more minutes.
+    bool seen = out.num_hits > 0 || persistence_any_active(&engine->persistence);
+    if (seen) {
+        engine->hold_minutes_left = BASELINE_HOLD_MIN;
+    } else if (engine->hold_minutes_left > 0) {
+        engine->hold_minutes_left--;
+    }
+    bool frozen = seen || engine->hold_minutes_left > 0;
     bool add[S_COUNT];
     for (int s = 0; s < S_COUNT; s++) {
         add[s] = valid[s] && faults[s] == F_NONE && !frozen;
@@ -149,8 +157,8 @@ void build_report(struct Node_engine *engine, unsigned long uptime_sec, struct R
     }
 
     // Labels that are on, split into pollution and watch lists
-    enum Label_id pollution[4];
-    enum Label_id watch[4];
+    enum Label_id pollution[LBL_COUNT];
+    enum Label_id watch[LBL_COUNT];
     int num_pollution = 0;
     int num_watch = 0;
     sort_active_labels(engine, pollution, &num_pollution, watch, &num_watch);

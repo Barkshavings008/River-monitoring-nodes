@@ -36,11 +36,15 @@
 #define ONEWIRE_PIN 35       // DS18B20 data pin, needs a 4.7k pull-up to 3.3 V
 #define ADC_SAMPLES 16       // number of ADC reads averaged for each sample
 
-// Voltage dividers: V_sensor = V_adc * ratio. The pH module and TSW-10 are 5 V
-// parts so a 10k/10k divider gives 2.0. The STJF TDS board only outputs <= 2.3 V.
-#define PH_DIVIDER_RATIO 2.0f
+// Voltage dividers: V_sensor = V_adc * ratio. The pH module (Logo-Rnaenaor V2.0)
+// and the TS-300B turbidity sensor are 5 V parts, so each goes through
+//   sensor output -> 12k -> ESP32 pin -> 10k -> GND
+// The pin sees 10 / (12 + 10) of the sensor voltage, so ratio = 22 / 10 = 2.2
+// (the TS-300B's 4.5 V maximum reaches the pin as 2.05 V).
+// The STJF TDS board only outputs <= 2.3 V, so it's wired straight in.
+#define PH_DIVIDER_RATIO 2.2f
 #define TDS_DIVIDER_RATIO 1.0f
-#define TURBIDITY_DIVIDER_RATIO 2.0f
+#define TURBIDITY_DIVIDER_RATIO 2.2f
 
 /////////////////////////
 ///////// TIMING ////////
@@ -67,11 +71,19 @@
 #define TDS_TEMP_COEFF 0.02f   // EC25 = EC / (1 + coeff * (T - 25))
 #define TDS_FACTOR 0.5f        // TDS (mg/L) = EC25 * factor
 
-#define PH_V7 2.50f            // module output in pH 7.0 buffer (after undoing the divider)
+// Logo-Rnaenaor V2.0 pH module: the output goes in a straight line with pH, so
+// it's calibrated from two buffers. Use the "cal" command with the probe in
+// each buffer and copy the pH voltage here (it's already scaled back up
+// through the divider). The defaults are typical for this kind of 5 V module.
+#define PH_V7 2.50f            // module output in pH 7.0 buffer
 #define PH_V4 3.05f            // module output in pH 4.0 buffer
 #define PH_CALIBRATION_TEMP_C 25.0f // water temp the two buffers were measured at
 
-#define TURB_V_CLEAR 4.20f        // TSW-10 output in clear water (measure your own)
+// TS-300B turbidity sensor: 0-4.5 V output, the voltage goes DOWN as the water
+// gets cloudier. It uses the standard curve for this sensor family (made for
+// a 4.2 V clear-water reading), scaled to your sensor's own clear-water
+// voltage. Rated 0-1000 NTU, so readings above that are only rough.
+#define TURB_V_CLEAR 4.50f        // TS-300B output in clear water (measure your own with "cal")
 #define TURB_V_CURVE_CLEAR 4.20f  // clear water voltage the NTU curve was made for
 #define TURB_V_CURVE_MIN 2.50f    // below this the curve doesn't work anymore
 #define TURB_MAX_NTU 3000.0f
@@ -96,6 +108,14 @@
 #define DRIFT_PH_LIMIT 0.5f
 #define DRIFT_OTHER_TOL 0.10f
 #define STEP_WINDOW_MIN 30              // window for the industrial step change
+// After a pattern or alert ends, keep "normal" frozen this long, so an alert
+// that keeps switching on and off doesn't slowly teach the node that the
+// polluted water is normal
+#if DEMO_MODE
+#define BASELINE_HOLD_MIN 10
+#else
+#define BASELINE_HOLD_MIN (3 * 60)
+#endif
 
 /////////////////////////
 ///////// FAULTS ////////
@@ -181,6 +201,15 @@
 #define SALT_PH_TOL 0.3f
 #define SALT_NTU_RATIO 1.5f
 
+// Treated wastewater / fertiliser runoff: clear water with extra dissolved
+// salts and a slightly lower pH
+#define EFF_TDS_RISE 0.10f
+#define EFF_PH_DROP_MIN 0.2f
+#define EFF_PH_DROP_MAX 1.0f
+#define EFF_NTU_RATIO 1.5f      // turbidity has to stay below this (muddy = sewage rule instead)
+#define EFF_TEMP_RISE_MIN 0.3f
+#define EFF_TEMP_RISE_MAX 3.0f
+
 /////////////////////////
 ///// 5. PERSISTENCE ////
 /////////////////////////
@@ -196,6 +225,9 @@
 #define NODE_ID_LEN 8
 #define NODE_PLACE_LEN 20
 #define NODE_STALE_MIN 3    // a node is ignored if it hasn't reported for this long
+#define MAX_BRANCHES 8      // separate streams / rivers in the network
+#define BRANCH_NAME_LEN 12
+#define MAIN_BRANCH "main"  // branch used when a node is added without naming one
 
 /////////////////////////
 //////// DISPLAY ////////

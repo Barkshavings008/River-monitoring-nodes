@@ -133,6 +133,20 @@ struct Rule_result rule_salt(struct Rule_inputs in) {
     return score_result(score, LBL_SALT);
 }
 
+// Clear water, more dissolved salts and a slightly lower pH. Treated sewage
+// and fertiliser both add nitrate/ammonium and salts (which lower the pH a
+// little) without making the water muddy. Muddy water is the sewage rule.
+struct Rule_result rule_effluent(struct Rule_inputs in) {
+    struct Score score = new_score();
+    score_required(&score, in.ok[S_TDS] && fraction_rise(in, S_TDS) > EFF_TDS_RISE);
+    score_required(&score, in.ok[S_PH] &&
+                           is_between(-change_from_base(in, S_PH), EFF_PH_DROP_MIN, EFF_PH_DROP_MAX));
+    score_required(&score, in.ok[S_NTU] && times_base(in, S_NTU) < EFF_NTU_RATIO);
+    score_optional(&score, in.ok[S_TEMP] &&
+                           is_between(change_from_base(in, S_TEMP), EFF_TEMP_RISE_MIN, EFF_TEMP_RISE_MAX));
+    return score_result(score, LBL_EFFLUENT);
+}
+
 // Runs every rule. Rain skips the pollution rules and sediment, because
 // rain by itself explains those readings.
 struct Rule_output evaluate_rules(struct Rule_inputs in) {
@@ -158,6 +172,7 @@ struct Rule_output evaluate_rules(struct Rule_inputs in) {
         add_hit(&out, rule_sediment(in));
     }
     add_hit(&out, rule_salt(in));
+    add_hit(&out, rule_effluent(in));
     return out;
 }
 
