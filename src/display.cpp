@@ -13,6 +13,7 @@
 
 #define HEADER_LEFT 16      // "=" signs before the node name in the header
 #define HEADER_MIN_RIGHT 3  // at least this many "=" signs after it
+#define ALSO_LIST_SIZE 300  // fits all MAX_ALSO label codes with ", " between them
 
 ////////////////////////
 // Function prototypes//
@@ -627,12 +628,12 @@ void print_also(struct Node_report report) {
     if (report.num_also == 0) {
         return;
     }
-    char list[160] = "";
+    char list[ALSO_LIST_SIZE] = "";
     for (int i = 0; i < report.num_also; i++) {
         if (i > 0) {
-            strncat(list, ", ", 160 - strlen(list) - 1);
+            strncat(list, ", ", ALSO_LIST_SIZE - strlen(list) - 1);
         }
-        strncat(list, get_label_info(report.also[i]).code, 160 - strlen(list) - 1);
+        strncat(list, get_label_info(report.also[i]).code, ALSO_LIST_SIZE - strlen(list) - 1);
     }
     print_wrapped("  Also flagged:        ", list, WRAP_TEXT_COLS);
 }

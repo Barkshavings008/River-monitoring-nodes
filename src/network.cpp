@@ -33,6 +33,9 @@ int network_add_branch(struct River_network *network, const char *name, unsigned
     if (name == NULL || name[0] == '\0' || network_find_branch(network, name) >= 0) {
         return -1;
     }
+    if (strlen(name) > BRANCH_NAME_LEN - 1) {
+        return -1; // too long: cutting it short could make two branches look the same
+    }
     if (network->num_branches >= MAX_BRANCHES) {
         return -1;
     }
@@ -80,12 +83,15 @@ bool network_add_node(struct River_network *network, const char *id, unsigned lo
 }
 
 // Adds a node in upstream -> downstream order (after any nodes already at
-// that spot). Fails if the id is empty or already used, the branch doesn't
-// exist, or the network is full.
+// that spot). Fails if the id is empty, too long (over NODE_ID_LEN - 1
+// characters) or already used, the branch doesn't exist, or the network is full.
 bool network_add_node_on_branch(struct River_network *network, const char *id, const char *branch,
     unsigned long distance_m, const char *place, bool is_local) {
     if (id == NULL || id[0] == '\0') {
         return false;
+    }
+    if (strlen(id) > NODE_ID_LEN - 1) {
+        return false; // too long: cutting it short could make two nodes have the same id
     }
     if (network_find_node(network, id) >= 0 || network->num_nodes >= MAX_NODES) {
         return false;

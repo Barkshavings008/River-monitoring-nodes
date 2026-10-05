@@ -76,9 +76,9 @@ class NodeCode {
 const SENSOR = {
     PH_V7: 2.50, PH_V4: 3.05,
     TDS_K: 1.0, TDS_TEMP_COEFF: 0.02, TDS_FACTOR: 0.5,
-    TURB_V_CLEAR: 4.20, TURB_V_CURVE_CLEAR: 4.20,
+    TURB_V_CLEAR: 4.50, TURB_V_CURVE_CLEAR: 4.20,
     ADC_MAX_V: 3.1,               // the ESP32 ADC can't read above about 3.1 V
-    PH_DIVIDER: 2.0, TDS_DIVIDER: 1.0, TURB_DIVIDER: 2.0,
+    PH_DIVIDER: 2.2, TDS_DIVIDER: 1.0, TURB_DIVIDER: 2.2,
 };
 
 function phToVolts(ph) {
@@ -583,7 +583,7 @@ class Simulation {
                 }
                 phV = clamp(phV, 0, SENSOR.ADC_MAX_V * SENSOR.PH_DIVIDER);
                 const tdsV = clamp(tdsToVolts(tds, temp) + this.noise(0.0008), 0, SENSOR.ADC_MAX_V * SENSOR.TDS_DIVIDER);
-                const ntuV = clamp(ntuToVolts(ntu) + this.noise(0.0004), 0, SENSOR.ADC_MAX_V * SENSOR.TURB_DIVIDER);
+                const ntuV = clamp(ntuToVolts(ntu) + this.noise(0.0004), 0, 4.5); // TS-300B maxes out at 4.5 V
                 this.code.addSample(node.id, phV, tdsV, ntuV, tempReading);
             }
             this.code.closeMinute(node.id, uptime, nowMin);

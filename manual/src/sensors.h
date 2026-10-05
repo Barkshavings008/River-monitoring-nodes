@@ -3,7 +3,8 @@
 // and get the pH. The water temperature is read and used automatically in the
 // pH and TDS maths.
 //
-// Sensors: pH module, STJF TDS Meter V1.0, TSW-10 turbidity, DS18B20 water temp.
+// Sensors: Logo-Rnaenaor V2.0 pH module, STJF TDS Meter V1.0, TS-300B turbidity,
+// DS18B20 water temp.
 
 // All four readings taken together
 struct Water_reading {

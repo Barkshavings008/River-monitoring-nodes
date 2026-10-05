@@ -152,7 +152,7 @@ float tds_from_voltage(float volts, float temp_c) {
     return tds;
 }
 
-// TSW-10: scale to the clear water voltage, use the curve, then keep it
+// TS-300B: scale to the clear water voltage, use the curve, then keep it
 // between 0 and TURB_MAX_NTU
 float turbidity_from_voltage(float volts) {
     float v = volts * TURB_V_CURVE_CLEAR / TURB_V_CLEAR;
