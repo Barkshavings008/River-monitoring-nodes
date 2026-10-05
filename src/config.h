@@ -51,8 +51,9 @@
 /////////////////////////
 
 #define SAMPLE_INTERVAL_MS 2000
-#if SIMULATE && SIM_FAST
-#define MINUTE_MS 10000
+#if DEMO_MODE || (SIMULATE && SIM_FAST)
+#define MINUTE_MS 10000     // a new reading is printed every 10 s (the "minute" in the demo) (aka 6x faster than real life)
+                            // change to 60000 for real-time operation
 #else
 #define MINUTE_MS 60000
 #endif
