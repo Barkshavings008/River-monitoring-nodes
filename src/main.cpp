@@ -31,6 +31,7 @@ void setup() {
     setup_river_layout();
     engine_begin(&local_engine, NODE_ID);
 
+    // the #if actually see's the conditon and determines if your code gets compiled
 #if !SIMULATE
     wake_up_sensors();
 #endif

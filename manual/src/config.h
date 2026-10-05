@@ -20,7 +20,7 @@
 #define PH_PIN 34
 #define TDS_PIN 35
 #define TURBIDITY_PIN 32
-#define ONEWIRE_PIN 4          // DS18B20 data pin, needs a 4.7k pull-up to 3.3 V
+#define ONEWIRE_PIN 33         // DS18B20 data pin, needs a 4.7k pull-up to 3.3 V
 #define ADC_SAMPLES 16         // number of ADC reads averaged for each reading
 
 // Voltage dividers: V_sensor = V_adc * ratio. The pH module and TSW-10 are 5 V
