@@ -229,6 +229,31 @@
 #define MAIN_BRANCH "main"  // branch used when a node is added without naming one
 
 /////////////////////////
+////// WATER SPEED //////
+/////////////////////////
+
+// The water speed is worked out from pollution moving down the river: when
+// the same kind of pollution shows up at an upstream node and then at a node
+// further down, speed = river distance between them / time between alerts.
+#define SPEED_QUIET_MIN 60        // a node only counts if it had no alerts for this long first
+#define SPEED_PAIR_WINDOW_MIN 360 // the upstream alert has to be from the last 6 hours
+                                  // (and no rain in between, since rain pauses and restarts alerts)
+#define SPEED_MAX_MPS 5.0f        // faster than this can't be a real river, so it's ignored
+#define MAX_DETECTIONS 32         // pollution arrivals remembered for pairing
+
+/////////////////////////
+/////// BLUETOOTH ///////
+/////////////////////////
+
+// Sends the readings and alerts to a phone over Bluetooth Low Energy (see
+// bluetooth.cpp, and docs/phone/index.html for the phone page)
+#ifndef BLUETOOTH
+#define BLUETOOTH 1
+#endif
+#define BLE_NAME_PREFIX "RiverNode-" // the board shows up as RiverNode-N1
+#define BLE_LINE_SIZE 4096           // biggest message sent to the phone (a full network is about 3.9 KB)
+
+/////////////////////////
 //////// DISPLAY ////////
 /////////////////////////
 
