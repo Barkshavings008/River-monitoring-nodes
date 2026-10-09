@@ -98,7 +98,8 @@ int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
     struct Rule_output out;
     out.num_hits = 0;
     out.rain = false;
-    if (baseline_ready(&engine->baseline)) {
+    bool rules_ran = baseline_ready(&engine->baseline);
+    if (rules_ran) {
         out = evaluate_rules(in);
         num_events = persistence_update(&engine->persistence, out.hits, out.num_hits,
                                         events, max_events);
@@ -119,8 +120,25 @@ int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
         add[s] = valid[s] && faults[s] == F_NONE && !frozen;
     }
 
+    // The 24 h pH range (for the algae rule) leaves out minutes with a
+    // pollution pattern, so an acid or alkaline spill can't look like algae.
+    // It only starts once the rules are running (after the warm-up), since
+    // before that there's no way to tell a spill from normal water.
+    bool pollution_seen = false;
+    for (int i = 0; i < out.num_hits; i++) {
+        if (get_label_info(out.hits[i].id).category == CAT_POLLUTION) {
+            pollution_seen = true;
+        }
+    }
+    for (int id = 0; id < LBL_COUNT; id++) {
+        if (engine->persistence.active[id] && get_label_info((enum Label_id)id).category == CAT_POLLUTION) {
+            pollution_seen = true;
+        }
+    }
+    bool track_ph = faults[S_PH] == F_NONE && !pollution_seen && rules_ran;
+
     build_report(engine, uptime_sec, in, faults, valid, out.rain, report);
-    baseline_add_minute(&engine->baseline, now, valid, add);
+    baseline_add_minute(&engine->baseline, now, valid, add, track_ph);
     return num_events;
 }
 

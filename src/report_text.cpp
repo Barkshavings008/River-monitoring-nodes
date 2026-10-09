@@ -29,7 +29,7 @@ const char *fault_reason(int sensor, enum Fault_code fault) {
     } else if (fault == F_FLATLINE) {
         return "reading stuck for 60+ min - check probe and wiring";
     } else if (fault == F_TEMP_JUMP) {
-        return "jumped more than 3 C in 1 min - check probe";
+        return "jumped more than 3 C and straight back - check probe";
     } else {
         return "";
     }

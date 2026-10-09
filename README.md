@@ -72,6 +72,8 @@ Divider wiring: sensor output → 12k → ESP32 pin → 10k → GND.
      `0` for real use.
    - Calibrate `PH_V7`, `PH_V4` and `TURB_V_CLEAR` with the `cal` command
      (see below).
+   - Set the turbidity noise limits `BASE_FLOOR_NTU` and `NTU_MIN_RISE`
+     (see below).
 4. Plug in the ESP32 and click **→ Upload** in the PlatformIO bar. The
    libraries download by themselves.
 5. Click the **plug icon (Serial Monitor)** to see the readings every minute.
@@ -92,7 +94,10 @@ Divider wiring: sensor output → 12k → ESP32 pin → 10k → GND.
 - **pH**: put the probe in pH 7 buffer, type `cal`, and copy the pH voltage
   into `PH_V7`. Rinse it, then do the same in pH 4 buffer for `PH_V4`.
 - **Turbidity**: put the sensor in clear water, type `cal`, and copy the
-  voltage into `TURB_V_CLEAR`.
+  voltage into `TURB_V_CLEAR`. Then leave it in still tap water for 30
+  minutes and watch how much the turbidity reading wobbles from minute to
+  minute. Set `BASE_FLOOR_NTU` and `NTU_MIN_RISE` a little above that
+  (they start at 20 and 25 NTU).
 - Store the pH probe with its cap on and potassium chloride (KCl) storage
   solution inside. Never store it dry or in distilled water.
 
@@ -124,7 +129,7 @@ in a browser. See [simulator/README.md](simulator/README.md).
 pio test -e native
 ```
 
-60 unit tests run on a computer: the pollution rules, sensor conversions,
+65 unit tests run on a computer: the pollution rules, sensor conversions,
 fault checks, learning normal, persistence, the whole engine, the river
 network, the water speed and the phone messages.
 
@@ -142,6 +147,10 @@ network, the water speed and the phone messages.
 
 - Four sensors can't tell every pollutant apart, so labels are likely
   candidates only.
+- The turbidity noise limits trade false alerts against sensitivity: a
+  diluted sewage overflow is usually only caught at the node nearest it.
+- The TDS sensor tops out at about 1120 mg/L, so it can't tell brackish
+  water from seawater.
 - The nodes don't talk to each other by radio yet. The other nodes are
   simulated (`SIM_REMOTE_NODES` in `config.h`).
 - The water speed is only known after a pollution plume has passed two nodes.

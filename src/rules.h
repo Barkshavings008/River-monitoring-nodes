@@ -20,7 +20,7 @@ struct Rule_inputs {
 struct Rule_output {
     struct Rule_result hits[MAX_RULE_HITS]; // every label whose required conditions are met
     int num_hits;
-    bool rain;                              // B fired, so the C rules and sediment were skipped
+    bool rain;                              // B fired, so industrial, alkaline and sediment were skipped
 };
 
 // Section 4 A: remembers each sensor's history between minutes
@@ -30,6 +30,8 @@ struct Fault_tracker {
     bool has_ref[S_COUNT];
     float prev_temp;
     bool has_prev_temp;
+    bool jump_pending;      // temperature jumped last minute: is it real or a glitch?
+    float jump_from;        // the temperature before the jump
 };
 
 ////////////////////////

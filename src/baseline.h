@@ -32,7 +32,8 @@ struct Baseline {
 ////////////////////////
 float median_of(float values[], int n);
 void baseline_reset(struct Baseline *baseline);
-void baseline_add_minute(struct Baseline *baseline, float values[], bool valid[], bool add[]);
+void baseline_add_minute(struct Baseline *baseline, float values[], bool valid[], bool add[],
+    bool track_ph);
 bool baseline_ready(struct Baseline *baseline);
 bool baseline_has(struct Baseline *baseline, int sensor);
 bool baseline_ph_day_range(struct Baseline *baseline, float *min_ph, float *max_ph);
