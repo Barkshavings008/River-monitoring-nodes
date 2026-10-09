@@ -18,7 +18,7 @@
 #define SIM_RAIN_END 15
 #define SIM_ACID_START 20
 #define SIM_ACID_END 33
-#define SIM_DOWNSTREAM_DELAY 2
+#define SIM_DOWNSTREAM_DELAY 8   // minutes for the plume to reach the downstream node (1500 m, about 3 m/s)
 #define SIM_SAMPLES_PER_MIN 5
 
 #define MAX_SIM_NODES 4

@@ -32,7 +32,7 @@ clang++ --target=wasm32-wasi --sysroot="$SYSROOT" -O2 -fno-exceptions -fno-rtti 
     -I"$HERE/wasm" -I"$SRC" \
     "$SRC/types.cpp" "$SRC/labels.cpp" "$SRC/compensation.cpp" "$SRC/baseline.cpp" \
     "$SRC/rules.cpp" "$SRC/persistence.cpp" "$SRC/node_engine.cpp" "$SRC/network.cpp" \
-    "$SRC/display.cpp" "$HERE/wasm/bridge.cpp" \
+    "$SRC/report_text.cpp" "$SRC/display.cpp" "$HERE/wasm/bridge.cpp" \
     "$SYSROOT/lib/wasm32-wasi/crt1-reactor.o" -L"$SYSROOT/lib/wasm32-wasi" -lc "$BUILTINS" \
     -o "$HERE/river_node.wasm"
 

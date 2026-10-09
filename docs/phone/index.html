@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1a1d">
+<title>River Node Alerts</title>
+<style>
+:root {
+    --bg: #f3f6f5;
+    --card: #ffffff;
+    --text: #13201f;
+    --muted: #5d6e6b;
+    --line: #dbe3e1;
+    --accent: #1f6f8b;
+    --ok: #2e7d4f;
+    --ok-bg: #e5f3ea;
+    --watch: #a86a00;
+    --watch-bg: #fff3d9;
+    --alert: #c2352b;
+    --alert-bg: #fde7e4;
+    --fault: #6b4fa3;
+    --fault-bg: #efe9f8;
+    --shadow: 0 1px 3px rgba(16, 32, 30, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #0f1a1d;
+        --card: #172629;
+        --text: #e4eeec;
+        --muted: #93a6a2;
+        --line: #284043;
+        --accent: #5fb3d3;
+        --ok: #6cc28f;
+        --ok-bg: #173226;
+        --watch: #f0b54a;
+        --watch-bg: #33280f;
+        --alert: #ff7a6e;
+        --alert-bg: #3d1a17;
+        --fault: #b9a2e8;
+        --fault-bg: #2a2140;
+        --shadow: none;
+    }
+}
+:root[data-theme="dark"] {
+    --bg: #0f1a1d;
+    --card: #172629;
+    --text: #e4eeec;
+    --muted: #93a6a2;
+    --line: #284043;
+    --accent: #5fb3d3;
+    --ok: #6cc28f;
+    --ok-bg: #173226;
+    --watch: #f0b54a;
+    --watch-bg: #33280f;
+    --alert: #ff7a6e;
+    --alert-bg: #3d1a17;
+    --fault: #b9a2e8;
+    --fault-bg: #2a2140;
+    --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+main { max-width: 560px; margin: 0 auto; padding: 12px 16px 40px; }
+header { display: flex; align-items: center; gap: 10px; padding: 6px 0 12px; }
+header h1 { font-size: 20px; margin: 0; flex: 1; }
+.pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--line); color: var(--muted); white-space: nowrap; }
+.pill.on { background: var(--ok-bg); color: var(--ok); }
+button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 14px;
+    background: var(--accent); color: #fff; cursor: pointer;
+}
+button.quiet { background: var(--line); color: var(--text); }
+button:disabled { opacity: 0.5; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 0 0 12px; box-shadow: var(--shadow); }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Big status banner */
+#status { border-width: 2px; }
+#status.NORMAL { background: var(--ok-bg); border-color: var(--ok); }
+#status.WATCH { background: var(--watch-bg); border-color: var(--watch); }
+#status.ALERT { background: var(--alert-bg); border-color: var(--alert); }
+#status.FAULT { background: var(--fault-bg); border-color: var(--fault); }
+#status.BASELINE_BUILDING { background: var(--card); border-color: var(--line); }
+#state-word { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
+#status.NORMAL #state-word { color: var(--ok); }
+#status.WATCH #state-word { color: var(--watch); }
+#status.ALERT #state-word { color: var(--alert); }
+#status.FAULT #state-word { color: var(--fault); }
+#label-name { font-size: 22px; font-weight: 700; margin: 2px 0 6px; line-height: 1.2; }
+.detail { margin: 6px 0 0; }
+.detail b { font-weight: 600; }
+
+/* Sensor tiles */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.tile .name { font-size: 13px; color: var(--muted); }
+.tile .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile .unit { font-size: 14px; font-weight: 500; color: var(--muted); }
+.tile .base { font-size: 13px; color: var(--muted); }
+.tile .change.up { color: var(--alert); }
+.tile .change.down { color: var(--accent); }
+.tile.fault { border-color: var(--fault); }
+
+#speed-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Node list */
+.node { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.node:first-of-type { border-top: 0; }
+.node .where { font-size: 13px; color: var(--muted); }
+.chip { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; align-self: flex-start; }
+.chip.NORMAL { background: var(--ok-bg); color: var(--ok); }
+.chip.WATCH { background: var(--watch-bg); color: var(--watch); }
+.chip.ALERT { background: var(--alert-bg); color: var(--alert); }
+.chip.FAULT { background: var(--fault-bg); color: var(--fault); }
+.chip.OFF, .chip.BASELINE_BUILDING { background: var(--line); color: var(--muted); }
+
+/* Log */
+#log { list-style: none; margin: 0; padding: 0; }
+#log li { padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+#log li:first-child { border-top: 0; }
+#log .time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+#log .on { color: var(--alert); font-weight: 600; }
+#log .off { color: var(--ok); font-weight: 600; }
+
+/* Pop-up when an alert starts */
+#popup {
+    position: fixed; left: 12px; right: 12px; top: calc(12px + env(safe-area-inset-top));
+    max-width: 536px; margin: 0 auto; z-index: 10;
+    background: #c2352b; color: #fff; border-radius: 14px; padding: 14px 16px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+#popup.watch { background: #f0b54a; color: #1d1300; }
+#popup ul { margin: 4px 0 6px; padding-left: 20px; font-weight: 600; }
+#popup b { display: block; font-size: 18px; margin-bottom: 4px; }
+#popup button { margin-top: 10px; background: rgba(255, 255, 255, 0.25); color: inherit; }
+.notice { border-left: 4px solid var(--accent); }
+.notice p { margin: 0 0 8px; }
+.notice p:last-child { margin-bottom: 0; }
+label.toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+</style>
+</head>
+<body>
+<div id="popup" class="hidden" role="alert">
+    <b id="popup-title"></b>
+    <ul id="popup-list"></ul>
+    <div id="popup-text"></div>
+    <button id="popup-close">OK</button>
+</div>
+<main>
+    <header>
+        <h1>River node</h1>
+        <span id="link" class="pill">Not connected</span>
+    </header>
+
+    <section id="setup" class="card notice">
+        <p><b>Connect to your river node over Bluetooth.</b> Stay within about 10–30 m of the board.</p>
+        <p id="no-bluetooth" class="hidden">This browser can't use Bluetooth. On an iPhone, open this page in the free
+            <b>Bluefy</b> app from the App Store. On Android, use Chrome.</p>
+        <div class="row">
+            <button id="connect">Connect</button>
+            <button id="demo" class="quiet">Try a demo</button>
+        </div>
+    </section>
+
+    <section id="status" class="card hidden">
+        <div id="state-word"></div>
+        <div id="label-name"></div>
+        <div id="label-extra"></div>
+        <div id="finding" class="detail small"></div>
+        <div id="sim-note" class="detail small muted hidden">Readings are simulated (SIMULATE is 1 in config.h).</div>
+    </section>
+
+    <section id="sensors" class="hidden">
+        <div class="tiles">
+            <div class="tile" id="t-ph"><div class="name">pH</div><div class="value">--</div><div class="base"></div></div>
+            <div class="tile" id="t-tds"><div class="name">TDS (dissolved salts)</div><div class="value">--</div><div class="base"></div></div>
+            <div class="tile" id="t-ntu"><div class="name">Turbidity (cloudiness)</div><div class="value">--</div><div class="base"></div></div>
+            <div class="tile" id="t-temp"><div class="name">Water temperature</div><div class="value">--</div><div class="base"></div></div>
+        </div>
+        <p id="updated" class="small muted"></p>
+    </section>
+
+    <section id="speed" class="card hidden">
+        <h2>Water speed</h2>
+        <div id="speed-value"></div>
+        <div id="speed-detail" class="small muted"></div>
+    </section>
+
+    <section id="nodes" class="card hidden">
+        <h2>Nodes on the river</h2>
+        <div id="node-list"></div>
+    </section>
+
+    <section id="events" class="card hidden">
+        <h2>Alerts</h2>
+        <ul id="log"></ul>
+    </section>
+
+    <section id="controls" class="card hidden">
+        <h2>Settings</h2>
+        <label class="toggle"><input type="checkbox" id="sound" checked> Sound when an alert starts</label>
+        <div class="row" style="margin-top:10px">
+            <button id="refresh" class="quiet">Refresh now</button>
+            <button id="disconnect" class="quiet">Disconnect</button>
+        </div>
+        <p class="small muted">Keep this page open (screen on) to get alerts. Pollutants listed are likely
+            candidates only: confirm with a lab water sample.</p>
+    </section>
+</main>
+
+<script>
+// Nordic UART service, the same ids as src/bluetooth.cpp
+const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";   // we write requests here
+const UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";   // the board sends messages here
+
+const $ = (id) => document.getElementById(id);
+let device = null;
+let rx = null;
+let wantConnected = false;
+let incoming = "";          // pieces of a message until its '\n' arrives
+let audio = null;
+let wakeLock = null;
+let demoTimer = null;
+let lastNodeId = "";
+let popupShownAt = 0;       // alerts that start together go in the same pop-up
+let lastSpeedLogged = "";
+
+// ---------- settings that stay on this phone ----------
+function loadSetting(key, fallback) {
+    try {
+        const v = localStorage.getItem(key);
+        return v === null ? fallback : v === "1";
+    } catch (e) {
+        return fallback;
+    }
+}
+function saveSetting(key, on) {
+    try { localStorage.setItem(key, on ? "1" : "0"); } catch (e) { /* private mode */ }
+}
+$("sound").checked = loadSetting("sound", true);
+$("sound").addEventListener("change", () => saveSetting("sound", $("sound").checked));
+
+if (!navigator.bluetooth) {
+    $("no-bluetooth").classList.remove("hidden");
+    $("connect").disabled = true;
+}
+
+// ---------- Bluetooth ----------
+$("connect").addEventListener("click", async () => {
+    unlockSound();
+    askForNotifications();
+    stopDemo();
+    try {
+        device = await navigator.bluetooth.requestDevice({
+            filters: [{ services: [UART_SERVICE] }, { namePrefix: "RiverNode" }],
+            optionalServices: [UART_SERVICE],
+        });
+        device.addEventListener("gattserverdisconnected", onDisconnected);
+        wantConnected = true;
+        await connect();
+    } catch (e) {
+        if (e.name !== "NotFoundError") {   // NotFoundError = the picker was closed
+            setLink("Couldn't connect: " + e.message, false);
+        }
+    }
+});
+
+async function connect() {
+    setLink("Connecting…", false);
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(UART_SERVICE);
+    const tx = await service.getCharacteristic(UART_TX);
+    rx = await service.getCharacteristic(UART_RX);
+    incoming = "";
+    tx.addEventListener("characteristicvaluechanged", (event) => {
+        receive(new TextDecoder().decode(event.target.value));
+    });
+    await tx.startNotifications();
+    setLink("Connected to " + device.name, true);
+    showConnectedUi();
+    keepScreenOn();
+    send("refresh");
+}
+
+// Tries to reconnect a few times if the board goes out of range
+async function onDisconnected() {
+    rx = null;
+    if (!wantConnected) {
+        setLink("Not connected", false);
+        return;
+    }
+    for (let attempt = 1; attempt <= 5 && wantConnected; attempt++) {
+        setLink("Connection lost, retrying (" + attempt + "/5)…", false);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        try {
+            await connect();
+            return;
+        } catch (e) { /* try again */ }
+    }
+    setLink("Disconnected - tap Connect to try again", false);
+    $("setup").classList.remove("hidden");
+}
+
+$("disconnect").addEventListener("click", () => {
+    wantConnected = false;
+    stopDemo();
+    if (device && device.gatt.connected) {
+        device.gatt.disconnect();
+    }
+    setLink("Not connected", false);
+    $("setup").classList.remove("hidden");
+});
+
+$("refresh").addEventListener("click", () => send("refresh"));
+
+async function send(text) {
+    if (!rx) {
+        return;
+    }
+    try {
+        await rx.writeValue(new TextEncoder().encode(text + "\n"));
+    } catch (e) { /* the next minute's update will still come */ }
+}
+
+// Joins the Bluetooth pieces back into whole lines, then handles each one
+function receive(text) {
+    incoming += text;
+    let end = incoming.indexOf("\n");
+    while (end >= 0) {
+        const line = incoming.slice(0, end).trim();
+        incoming = incoming.slice(end + 1);
+        if (line.startsWith("{")) {
+            try {
+                handle(JSON.parse(line));
+            } catch (e) {
+                console.warn("Bad message", line);
+            }
+        }
+        end = incoming.indexOf("\n");
+    }
+    if (incoming.length > 20000) {
+        incoming = "";   // something went wrong, start fresh
+    }
+}
+
+function handle(m) {
+    if (m.type === "status") {
+        showStatus(m);
+    } else if (m.type === "nodes") {
+        showNodes(m.nodes);
+    } else if (m.type === "alert") {
+        onAlert(m);
+    } else if (m.type === "speed") {
+        showSpeed(m.speed, true);
+    }
+}
+
+// ---------- showing the messages ----------
+const SENSORS = [
+    { key: "ph", tile: "t-ph", unit: "", decimals: 2, name: "pH" },
+    { key: "tds", tile: "t-tds", unit: "mg/L", decimals: 0, name: "TDS" },
+    { key: "ntu", tile: "t-ntu", unit: "NTU", decimals: 1, name: "Turbidity" },
+    { key: "temp", tile: "t-temp", unit: "°C", decimals: 1, name: "Water temp" },   // names match sensor_name() in types.cpp
+];
+
+const STATE_WORDS = {
+    NORMAL: "NORMAL",
+    WATCH: "WATCH",
+    ALERT: "POLLUTION ALERT",
+    FAULT: "SENSOR PROBLEM",
+    BASELINE_BUILDING: "LEARNING",
+};
+
+function showStatus(m) {
+    lastNodeId = m.node;
+    $("status").className = "card " + m.state;
+    $("state-word").textContent = STATE_WORDS[m.state] || m.state;
+    $("sim-note").classList.toggle("hidden", !m.sim);
+
+    const extra = $("label-extra");
+    extra.textContent = "";
+    if (m.state === "BASELINE_BUILDING") {
+        $("label-name").textContent = "Learning what normal water looks like";
+        addDetail(extra, "Progress", m.learned_min + " of " + m.learn_needed_min + " minutes");
+    } else if (m.label.code === "NONE") {
+        $("label-name").textContent = "Water looks normal";
+    } else {
+        $("label-name").textContent = m.label.name;
+        if (m.label.category === "POLLUTION" || m.label.category === "WATCH") {
+            addDetail(extra, "Confidence", Math.round(m.conf * 100) + "%");
+        }
+        if (m.label.pollutants) {
+            addDetail(extra, "Possible pollutants", m.label.pollutants);
+        }
+        if (m.label.meaning) {
+            addDetail(extra, "What it means", m.label.meaning);
+        }
+    }
+    if (m.also.length > 0) {
+        addDetail(extra, "Also flagged", m.also.map((a) => a.name).join(", "));
+    }
+    for (const f of m.faults) {
+        addDetail(extra, f.sensor + " sensor", f.text);
+    }
+    if (m.ph_recalibrate) {
+        addDetail(extra, "pH sensor", "drifting - recalibrate it with buffers");
+    }
+    $("finding").textContent = m.finding_text || "";
+
+    for (const s of SENSORS) {
+        const tile = $(s.tile);
+        const now = m.now[s.key];
+        const base = m.base[s.key];
+        const value = tile.querySelector(".value");
+        value.textContent = fmt(now, s.decimals);
+        if (now !== null && s.unit) {
+            const unit = document.createElement("span");
+            unit.className = "unit";
+            unit.textContent = " " + s.unit;
+            value.appendChild(unit);
+        }
+
+        // "normal 7.20 ▼" under the reading
+        const baseText = tile.querySelector(".base");
+        baseText.textContent = "";
+        if (base !== null && now !== null && m.state !== "BASELINE_BUILDING") {
+            baseText.textContent = "normal " + base.toFixed(s.decimals) + " ";
+            const diff = now - base;
+            if (Math.abs(diff) >= Math.pow(10, -s.decimals)) {
+                const arrow = document.createElement("span");
+                if (diff > 0) {
+                    arrow.className = "change up";
+                    arrow.textContent = "▲";
+                } else {
+                    arrow.className = "change down";
+                    arrow.textContent = "▼";
+                }
+                baseText.appendChild(arrow);
+            }
+        }
+        tile.classList.toggle("fault", m.faults.some((f) => f.sensor === s.name));
+    }
+    $("updated").textContent = "Updated " + clock(new Date()) + " from " + m.node;
+    showSpeed(m.speed, false);
+    for (const id of ["status", "sensors", "speed", "nodes", "events", "controls"]) {
+        $(id).classList.remove("hidden");
+    }
+}
+
+function addDetail(parent, name, text) {
+    const p = document.createElement("p");
+    p.className = "detail";
+    const b = document.createElement("b");
+    b.textContent = name + ": ";
+    p.appendChild(b);
+    p.appendChild(document.createTextNode(text));
+    parent.appendChild(p);
+}
+
+function showSpeed(speed, isNew) {
+    if (!speed) {
+        $("speed-value").textContent = "Not known yet";
+        $("speed-detail").textContent = "Worked out when the same pollution reaches two nodes, one after the other.";
+        return;
+    }
+    $("speed-value").textContent = "≈ " + speed.mps.toFixed(2) + " m/s (" + (speed.mps * 3.6).toFixed(1) + " km/h)";
+    $("speed-detail").textContent = speed.label + " went from " + speed.from + " to " + speed.to + ": " +
+        speed.metres + " m in " + speed.minutes + " min · " + age(speed.age_min);
+    const key = speed.from + speed.to + speed.metres + speed.minutes;
+    if (isNew && key !== lastSpeedLogged) {
+        lastSpeedLogged = key;
+        logEvent("Water speed ≈ " + speed.mps.toFixed(2) + " m/s (" + speed.from + " → " + speed.to + ")", "");
+    }
+}
+
+function age(minutes) {
+    if (minutes < 1) {
+        return "just now";
+    }
+    if (minutes < 60) {
+        return minutes + " min ago";
+    }
+    return Math.round(minutes / 60) + " h ago";
+}
+
+function showNodes(nodes) {
+    const list = $("node-list");
+    list.textContent = "";
+    const branched = new Set(nodes.map((n) => n.branch)).size > 1;
+    for (const n of nodes) {
+        const row = document.createElement("div");
+        row.className = "node";
+        const left = document.createElement("div");
+        const title = document.createElement("div");
+        title.textContent = n.id + (n.local ? " (this board)" : "") + " · " + n.place;
+        const where = document.createElement("div");
+        where.className = "where";
+        let text = (branched ? n.branch + " " : "") + n.dist + " m";
+        if (n.live && n.now) {
+            text += " · pH " + fmt(n.now.ph, 2) + " · " + fmt(n.now.tds, 0) + " mg/L · " +
+                fmt(n.now.ntu, 1) + " NTU · " + fmt(n.now.temp, 1) + " °C";
+        }
+        where.textContent = text;
+        left.appendChild(title);
+        left.appendChild(where);
+        const chip = document.createElement("span");
+        if (n.live) {
+            chip.className = "chip " + n.state;
+            chip.textContent = n.label === "No pattern" ? (STATE_WORDS[n.state] || n.state) : n.label;
+        } else {
+            chip.className = "chip OFF";
+            chip.textContent = n.status;
+        }
+        row.appendChild(left);
+        row.appendChild(chip);
+        list.appendChild(row);
+    }
+}
+
+function fmt(value, decimals) {
+    return value === null ? "--" : value.toFixed(decimals);
+}
+
+// ---------- alerts ----------
+function onAlert(m) {
+    if (m.on) {
+        const pollution = m.label.category === "POLLUTION";
+        let title = "Watch: " + m.label.name;
+        if (pollution) {
+            title = "Pollution alert: " + m.label.name;
+        }
+        const text = "pH " + fmt(m.now.ph, 2) + ", TDS " + fmt(m.now.tds, 0) + " mg/L, turbidity " +
+            fmt(m.now.ntu, 1) + " NTU, " + fmt(m.now.temp, 1) + " °C";
+        logEvent(title, "on");
+        popup(m, text);
+        notifyPhone(title + " at " + m.node, text);
+    } else {
+        logEvent("Cleared: " + m.label.name, "off");
+    }
+}
+
+function logEvent(text, kind) {
+    const li = document.createElement("li");
+    const time = document.createElement("span");
+    time.className = "time";
+    time.textContent = clock(new Date());
+    const what = document.createElement("span");
+    what.className = kind;
+    what.textContent = text;
+    li.appendChild(time);
+    li.appendChild(what);
+    $("log").prepend(li);
+    while ($("log").children.length > 50) {
+        $("log").lastChild.remove();
+    }
+    $("events").classList.remove("hidden");
+}
+
+// Shows the pop-up, or adds to it if another alert started a moment ago
+function popup(m, text) {
+    const box = $("popup");
+    const list = $("popup-list");
+    const joining = !box.classList.contains("hidden") && Date.now() - popupShownAt < 5000;
+    const pollution = m.label.category === "POLLUTION";
+    if (!joining) {
+        list.textContent = "";
+        box.className = "watch";
+    }
+    if (pollution) {
+        box.className = "";   // red wins over yellow
+    }
+    let title = "Watch at " + m.node;
+    if (box.className === "") {
+        title = "Pollution alert at " + m.node;
+    }
+    $("popup-title").textContent = title;
+    const item = document.createElement("li");
+    item.textContent = m.label.name;
+    list.appendChild(item);
+    $("popup-text").textContent = text;
+    if (joining) {
+        return;   // already beeped for this one
+    }
+    popupShownAt = Date.now();
+    if ($("sound").checked) {
+        let beeps = 2;
+        if (pollution) {
+            beeps = 4;
+        }
+        beep(beeps);
+    }
+    if (navigator.vibrate) {
+        navigator.vibrate([300, 150, 300, 150, 600]);
+    }
+}
+$("popup-close").addEventListener("click", () => $("popup").classList.add("hidden"));
+
+// A system notification as well, where the browser allows it
+function askForNotifications() {
+    if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+    }
+}
+function notifyPhone(title, text) {
+    if ("Notification" in window && Notification.permission === "granted") {
+        try { new Notification(title, { body: text, tag: "river-alert" }); } catch (e) { /* not allowed here */ }
+    }
+}
+
+// Sound only works after a tap, so it's set up when Connect or Demo is tapped
+function unlockSound() {
+    if (!audio) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+            audio = new Ctx();
+        }
+    }
+    if (audio && audio.state === "suspended") {
+        audio.resume();
+    }
+}
+function beep(times) {
+    if (!audio) {
+        return;
+    }
+    for (let i = 0; i < times; i++) {
+        const start = audio.currentTime + i * 0.35;
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.4, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.25);
+        osc.connect(gain).connect(audio.destination);
+        osc.start(start);
+        osc.stop(start + 0.3);
+    }
+}
+
+// Asks the phone not to turn the screen off while connected
+async function keepScreenOn() {
+    try {
+        if ("wakeLock" in navigator && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request("screen");
+            wakeLock.addEventListener("release", () => { wakeLock = null; });
+        }
+    } catch (e) { /* not supported */ }
+}
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && (wantConnected || demoTimer)) {
+        keepScreenOn();
+    }
+});
+
+// ---------- helpers ----------
+function setLink(text, on) {
+    $("link").textContent = text;
+    $("link").className = on ? "pill on" : "pill";
+}
+function showConnectedUi() {
+    $("setup").classList.add("hidden");
+    $("controls").classList.remove("hidden");
+}
+function clock(date) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// ---------- demo ----------
+// Real messages recorded from the board's SIMULATE mode (an acid spill at N1
+// that reaches N3 8 minutes later), replayed so the page can be tried
+// without the board
+const DEMO = [
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":20,\"minute_s\":10,\"sim\":true,\"state\":\"NORMAL\",\"code\":\"NONE\",\"conf\":0.00,\"label\":{\"code\":\"NONE\",\"name\":\"No pattern\",\"category\":\"NONE\",\"pollutants\":\"\",\"meaning\":\"\"},\"also\":[],\"now\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.0,\"temp\":17.1},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"NONE\",\"finding_text\":\"\",\"speed\":null}",
+    "{\"type\":\"nodes\",\"min\":20,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.29,\"tds\":198,\"ntu\":6.9,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.0,\"temp\":17.1}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.09,\"tds\":215,\"ntu\":8.3,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.20,\"tds\":220,\"ntu\":9.2,\"temp\":17.3}}]}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":21,\"minute_s\":10,\"sim\":true,\"state\":\"NORMAL\",\"code\":\"NONE\",\"conf\":0.00,\"label\":{\"code\":\"NONE\",\"name\":\"No pattern\",\"category\":\"NONE\",\"pollutants\":\"\",\"meaning\":\"\"},\"also\":[],\"now\":{\"ph\":4.59,\"tds\":611,\"ntu\":18.2,\"temp\":17.4},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"NONE\",\"finding_text\":\"\",\"speed\":null}",
+    "{\"type\":\"nodes\",\"min\":21,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.31,\"tds\":200,\"ntu\":7.0,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":4.59,\"tds\":611,\"ntu\":18.2,\"temp\":17.4}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.08,\"tds\":214,\"ntu\":8.5,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.20,\"tds\":221,\"ntu\":9.1,\"temp\":17.3}}]}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":22,\"minute_s\":10,\"sim\":true,\"state\":\"NORMAL\",\"code\":\"NONE\",\"conf\":0.00,\"label\":{\"code\":\"NONE\",\"name\":\"No pattern\",\"category\":\"NONE\",\"pollutants\":\"\",\"meaning\":\"\"},\"also\":[],\"now\":{\"ph\":4.60,\"tds\":612,\"ntu\":18.3,\"temp\":17.4},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"NONE\",\"finding_text\":\"\",\"speed\":null}",
+    "{\"type\":\"nodes\",\"min\":22,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.29,\"tds\":201,\"ntu\":7.0,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":4.60,\"tds\":612,\"ntu\":18.3,\"temp\":17.4}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.12,\"tds\":216,\"ntu\":8.5,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.19,\"tds\":220,\"ntu\":9.0,\"temp\":17.3}}]}",
+    "{\"type\":\"alert\",\"node\":\"N1\",\"min\":23,\"on\":true,\"conf\":1.00,\"label\":{\"code\":\"LIKELY_HEAVY_METALS\",\"name\":\"Likely heavy metals / acid mine drainage\",\"category\":\"POLLUTION\",\"pollutants\":\"Iron, aluminium, manganese, copper, zinc, lead, cadmium, arsenic, sulfate / sulfuric acid\",\"meaning\":\"Acidic, metal-rich water. Low pH also pulls metals out of the riverbed.\"},\"now\":{\"ph\":4.59,\"tds\":613,\"ntu\":17.9,\"temp\":17.4}}",
+    "{\"type\":\"alert\",\"node\":\"N1\",\"min\":23,\"on\":true,\"conf\":0.67,\"label\":{\"code\":\"LIKELY_INDUSTRIAL_DISCHARGE\",\"name\":\"Likely industrial discharge\",\"category\":\"POLLUTION\",\"pollutants\":\"Acids or alkalis, dissolved salts, plating metals (chromium, nickel), dyes, cleaning chemicals\",\"meaning\":\"Leak from a single point; sudden jump in readings.\"},\"now\":{\"ph\":4.59,\"tds\":613,\"ntu\":17.9,\"temp\":17.4}}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":23,\"minute_s\":10,\"sim\":true,\"state\":\"ALERT\",\"code\":\"LIKELY_HEAVY_METALS\",\"conf\":1.00,\"label\":{\"code\":\"LIKELY_HEAVY_METALS\",\"name\":\"Likely heavy metals / acid mine drainage\",\"category\":\"POLLUTION\",\"pollutants\":\"Iron, aluminium, manganese, copper, zinc, lead, cadmium, arsenic, sulfate / sulfuric acid\",\"meaning\":\"Acidic, metal-rich water. Low pH also pulls metals out of the riverbed.\"},\"also\":[{\"code\":\"LIKELY_INDUSTRIAL_DISCHARGE\",\"name\":\"Likely industrial discharge\",\"category\":\"POLLUTION\"}],\"now\":{\"ph\":4.59,\"tds\":613,\"ntu\":17.9,\"temp\":17.4},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"SOURCE_LOCAL_SIDE\",\"finding_text\":\"Source likely between N0 (0 m) and N1 (1000 m), on N1's side - other node(s) at this position are normal.\",\"speed\":null}",
+    "{\"type\":\"nodes\",\"min\":23,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.28,\"tds\":199,\"ntu\":7.0,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":4.59,\"tds\":613,\"ntu\":17.9,\"temp\":17.4}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.10,\"tds\":215,\"ntu\":8.5,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.21,\"tds\":219,\"ntu\":8.8,\"temp\":17.3}}]}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":24,\"minute_s\":10,\"sim\":true,\"state\":\"ALERT\",\"code\":\"LIKELY_HEAVY_METALS\",\"conf\":1.00,\"label\":{\"code\":\"LIKELY_HEAVY_METALS\",\"name\":\"Likely heavy metals / acid mine drainage\",\"category\":\"POLLUTION\",\"pollutants\":\"Iron, aluminium, manganese, copper, zinc, lead, cadmium, arsenic, sulfate / sulfuric acid\",\"meaning\":\"Acidic, metal-rich water. Low pH also pulls metals out of the riverbed.\"},\"also\":[{\"code\":\"LIKELY_INDUSTRIAL_DISCHARGE\",\"name\":\"Likely industrial discharge\",\"category\":\"POLLUTION\"}],\"now\":{\"ph\":4.60,\"tds\":611,\"ntu\":18.1,\"temp\":17.4},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"SOURCE_LOCAL_SIDE\",\"finding_text\":\"Source likely between N0 (0 m) and N1 (1000 m), on N1's side - other node(s) at this position are normal.\",\"speed\":null}",
+    "{\"type\":\"nodes\",\"min\":24,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.31,\"tds\":202,\"ntu\":6.9,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":4.60,\"tds\":611,\"ntu\":18.1,\"temp\":17.4}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.12,\"tds\":213,\"ntu\":8.6,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.23,\"tds\":221,\"ntu\":9.0,\"temp\":17.3}}]}",
+    "{\"type\":\"speed\",\"speed\":{\"mps\":3.12,\"from\":\"N1\",\"to\":\"N3\",\"metres\":1500,\"minutes\":8,\"age_min\":0,\"label\":\"Likely heavy metals / acid mine drainage\"}}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":31,\"minute_s\":10,\"sim\":true,\"state\":\"ALERT\",\"code\":\"LIKELY_HEAVY_METALS\",\"conf\":1.00,\"label\":{\"code\":\"LIKELY_HEAVY_METALS\",\"name\":\"Likely heavy metals / acid mine drainage\",\"category\":\"POLLUTION\",\"pollutants\":\"Iron, aluminium, manganese, copper, zinc, lead, cadmium, arsenic, sulfate / sulfuric acid\",\"meaning\":\"Acidic, metal-rich water. Low pH also pulls metals out of the riverbed.\"},\"also\":[{\"code\":\"LIKELY_INDUSTRIAL_DISCHARGE\",\"name\":\"Likely industrial discharge\",\"category\":\"POLLUTION\"}],\"now\":{\"ph\":4.59,\"tds\":614,\"ntu\":18.3,\"temp\":17.4},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"SOURCE_LOCAL_SIDE\",\"finding_text\":\"Source likely between N0 (0 m) and N1 (1000 m), on N1's side - other node(s) at this position are normal.\",\"speed\":{\"mps\":3.12,\"from\":\"N1\",\"to\":\"N3\",\"metres\":1500,\"minutes\":8,\"age_min\":0,\"label\":\"Likely industrial discharge\"}}",
+    "{\"type\":\"nodes\",\"min\":31,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.30,\"tds\":200,\"ntu\":7.0,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":4.59,\"tds\":614,\"ntu\":18.3,\"temp\":17.4}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.10,\"tds\":214,\"ntu\":8.6,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":5.59,\"tds\":396,\"ntu\":12.0,\"temp\":17.3}}]}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":32,\"minute_s\":10,\"sim\":true,\"state\":\"ALERT\",\"code\":\"LIKELY_HEAVY_METALS\",\"conf\":1.00,\"label\":{\"code\":\"LIKELY_HEAVY_METALS\",\"name\":\"Likely heavy metals / acid mine drainage\",\"category\":\"POLLUTION\",\"pollutants\":\"Iron, aluminium, manganese, copper, zinc, lead, cadmium, arsenic, sulfate / sulfuric acid\",\"meaning\":\"Acidic, metal-rich water. Low pH also pulls metals out of the riverbed.\"},\"also\":[{\"code\":\"LIKELY_INDUSTRIAL_DISCHARGE\",\"name\":\"Likely industrial discharge\",\"category\":\"POLLUTION\"}],\"now\":{\"ph\":4.60,\"tds\":613,\"ntu\":18.2,\"temp\":17.4},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"SOURCE_LOCAL_SIDE\",\"finding_text\":\"Source likely between N0 (0 m) and N1 (1000 m), on N1's side - other node(s) at this position are normal.\",\"speed\":{\"mps\":3.12,\"from\":\"N1\",\"to\":\"N3\",\"metres\":1500,\"minutes\":8,\"age_min\":1,\"label\":\"Likely industrial discharge\"}}",
+    "{\"type\":\"nodes\",\"min\":32,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.30,\"tds\":199,\"ntu\":7.0,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":4.60,\"tds\":613,\"ntu\":18.2,\"temp\":17.4}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.09,\"tds\":215,\"ntu\":8.4,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":5.59,\"tds\":400,\"ntu\":12.3,\"temp\":17.3}}]}",
+    "{\"type\":\"alert\",\"node\":\"N1\",\"min\":38,\"on\":false,\"conf\":1.00,\"label\":{\"code\":\"LIKELY_HEAVY_METALS\",\"name\":\"Likely heavy metals / acid mine drainage\",\"category\":\"POLLUTION\",\"pollutants\":\"Iron, aluminium, manganese, copper, zinc, lead, cadmium, arsenic, sulfate / sulfuric acid\",\"meaning\":\"Acidic, metal-rich water. Low pH also pulls metals out of the riverbed.\"},\"now\":{\"ph\":7.19,\"tds\":210,\"ntu\":8.1,\"temp\":17.1}}",
+    "{\"type\":\"alert\",\"node\":\"N1\",\"min\":38,\"on\":false,\"conf\":0.67,\"label\":{\"code\":\"LIKELY_INDUSTRIAL_DISCHARGE\",\"name\":\"Likely industrial discharge\",\"category\":\"POLLUTION\",\"pollutants\":\"Acids or alkalis, dissolved salts, plating metals (chromium, nickel), dyes, cleaning chemicals\",\"meaning\":\"Leak from a single point; sudden jump in readings.\"},\"now\":{\"ph\":7.19,\"tds\":210,\"ntu\":8.1,\"temp\":17.1}}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":38,\"minute_s\":10,\"sim\":true,\"state\":\"NORMAL\",\"code\":\"NONE\",\"conf\":0.00,\"label\":{\"code\":\"NONE\",\"name\":\"No pattern\",\"category\":\"NONE\",\"pollutants\":\"\",\"meaning\":\"\"},\"also\":[],\"now\":{\"ph\":7.19,\"tds\":210,\"ntu\":8.1,\"temp\":17.1},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"NONE\",\"finding_text\":\"\",\"speed\":{\"mps\":3.12,\"from\":\"N1\",\"to\":\"N3\",\"metres\":1500,\"minutes\":8,\"age_min\":7,\"label\":\"Likely industrial discharge\"}}",
+    "{\"type\":\"nodes\",\"min\":38,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.30,\"tds\":199,\"ntu\":6.9,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.19,\"tds\":210,\"ntu\":8.1,\"temp\":17.1}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.09,\"tds\":217,\"ntu\":8.5,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":5.59,\"tds\":400,\"ntu\":11.9,\"temp\":17.3}}]}",
+    "{\"type\":\"status\",\"node\":\"N1\",\"pos\":1000,\"min\":39,\"minute_s\":10,\"sim\":true,\"state\":\"NORMAL\",\"code\":\"NONE\",\"conf\":0.00,\"label\":{\"code\":\"NONE\",\"name\":\"No pattern\",\"category\":\"NONE\",\"pollutants\":\"\",\"meaning\":\"\"},\"also\":[],\"now\":{\"ph\":7.21,\"tds\":211,\"ntu\":8.2,\"temp\":17.1},\"base\":{\"ph\":7.20,\"tds\":210,\"ntu\":8.2,\"temp\":17.1},\"faults\":[],\"ph_recalibrate\":false,\"learned_min\":8,\"learn_needed_min\":5,\"finding\":\"NONE\",\"finding_text\":\"\",\"speed\":{\"mps\":3.12,\"from\":\"N1\",\"to\":\"N3\",\"metres\":1500,\"minutes\":8,\"age_min\":8,\"label\":\"Likely industrial discharge\"}}",
+    "{\"type\":\"nodes\",\"min\":39,\"nodes\":[{\"id\":\"N0\",\"place\":\"upstream\",\"branch\":\"main\",\"dist\":0,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.29,\"tds\":201,\"ntu\":7.1,\"temp\":17.0}},{\"id\":\"N1\",\"place\":\"left bank\",\"branch\":\"main\",\"dist\":1000,\"local\":true,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.21,\"tds\":211,\"ntu\":8.2,\"temp\":17.1}},{\"id\":\"N2\",\"place\":\"right bank\",\"branch\":\"main\",\"dist\":1000,\"local\":false,\"live\":true,\"state\":\"NORMAL\",\"label\":\"No pattern\",\"category\":\"NONE\",\"now\":{\"ph\":7.10,\"tds\":215,\"ntu\":8.6,\"temp\":17.2}},{\"id\":\"N3\",\"place\":\"downstream\",\"branch\":\"main\",\"dist\":2500,\"local\":false,\"live\":true,\"state\":\"ALERT\",\"label\":\"Likely heavy metals\",\"category\":\"POLLUTION\",\"now\":{\"ph\":5.62,\"tds\":400,\"ntu\":12.1,\"temp\":17.3}}]}",
+];
+
+$("demo").addEventListener("click", () => {
+    unlockSound();
+    askForNotifications();
+    stopDemo();
+    let i = 0;
+    setLink("Demo", true);
+    showConnectedUi();
+    const next = () => {
+        receive(DEMO[i] + "\n");
+        i = (i + 1) % DEMO.length;
+    };
+    next();
+    demoTimer = setInterval(next, 1500);
+});
+function stopDemo() {
+    if (demoTimer) {
+        clearInterval(demoTimer);
+        demoTimer = null;
+    }
+}
+</script>
+</body>
+</html>
