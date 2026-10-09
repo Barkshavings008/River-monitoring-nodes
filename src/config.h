@@ -76,8 +76,10 @@
 // it's calibrated from two buffers. Use the "cal" command with the probe in
 // each buffer and copy the pH voltage here (it's already scaled back up
 // through the divider). The defaults are typical for this kind of 5 V module.
-#define PH_V7 2.50f            // module output in pH 7.0 buffer
-#define PH_V4 3.05f            // module output in pH 4.0 buffer
+
+// #define PH_V7 2.50f            // module output in pH 7.0 buffer
+#define PH_V7 4.00f            // module output in pH 7.0 buffer
+#define PH_V4 4.55f            // module output in pH 4.0 buffer (THIS NEEDS TO BE CHANGED!!!)
 #define PH_CALIBRATION_TEMP_C 25.0f // water temp the two buffers were measured at
 
 // TS-300B turbidity sensor: 0-4.5 V output, the voltage goes DOWN as the water
