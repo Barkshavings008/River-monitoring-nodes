@@ -207,6 +207,18 @@ label.toggle { display: flex; align-items: center; gap: 8px; font-size: 15px; }
         <ul id="log"></ul>
     </section>
 
+    <section id="wifi" class="card hidden">
+        <h2>WiFi notifications</h2>
+        <p class="detail"><b>WiFi:</b> <span id="wifi-state">--</span></p>
+        <p class="detail"><b>Sensor-problem alerts:</b> <span id="armed-state">--</span></p>
+        <div class="row" style="margin-top:10px">
+            <button id="arm" class="quiet">Arm sensors</button>
+            <button id="test" class="quiet">Send test notification</button>
+        </div>
+        <p class="small muted">Pop-ups come through the ntfy app. Arm the sensors once the probes are in
+            the water, so setting up doesn't set off sensor-problem alerts.</p>
+    </section>
+
     <section id="controls" class="card hidden">
         <h2>Settings</h2>
         <label class="toggle"><input type="checkbox" id="sound" checked> Sound when an alert starts</label>
@@ -324,6 +336,20 @@ $("disconnect").addEventListener("click", () => {
 });
 
 $("refresh").addEventListener("click", () => send("refresh"));
+
+// Arm / disarm sensor-problem notifications, and ask the board to send a test pop-up
+let armed = false;
+$("arm").addEventListener("click", () => {
+    if (armed) {
+        send("disarm");
+    } else {
+        send("arm");
+    }
+});
+$("test").addEventListener("click", () => {
+    send("test");
+    logEvent("Test notification requested", "");
+});
 
 async function send(text) {
     if (!rx) {
@@ -454,9 +480,33 @@ function showStatus(m) {
     }
     $("updated").textContent = "Updated " + clock(new Date()) + " from " + m.node;
     showSpeed(m.speed, false);
-    for (const id of ["status", "sensors", "speed", "nodes", "events", "controls"]) {
+    for (const id of ["status", "sensors", "speed", "nodes", "events", "wifi", "controls"]) {
         $(id).classList.remove("hidden");
     }
+    showWifi(m);
+}
+
+const WIFI_WORDS = {
+    off: "off (no src/secrets.h on the board)",
+    connecting: "connecting…",
+    connected: "connected",
+};
+
+function showWifi(m) {
+    if (m.wifi === undefined) {
+        $("wifi").classList.add("hidden");   // older board code without WiFi
+        return;
+    }
+    $("wifi-state").textContent = WIFI_WORDS[m.wifi] || m.wifi;
+    armed = m.armed;
+    if (armed) {
+        $("armed-state").textContent = "armed";
+        $("arm").textContent = "Disarm sensors";
+    } else {
+        $("armed-state").textContent = "not armed";
+        $("arm").textContent = "Arm sensors";
+    }
+    $("test").disabled = m.wifi === "off";
 }
 
 function addDetail(parent, name, text) {

@@ -30,8 +30,9 @@ pollution is coming from and how fast the water is moving it downstream.
   two nodes
 - **Estimates water speed** from the same pollution reaching one node and then
   another further down
-- **Sends phone alerts** over Bluetooth Low Energy to a web page that shows
-  the readings, the pollution type, the water speed and every node
+- **Sends phone notifications** over WiFi (through the free ntfy app) with
+  the pollution type, the readings, where it's coming from and the water speed,
+  plus a Bluetooth phone page as a backup
 
 ## How it works
 
@@ -72,6 +73,8 @@ Divider wiring: sensor output → 12k → ESP32 pin → 10k → GND.
      `0` for real use.
    - Calibrate `PH_V7`, `PH_V4` and `TURB_V_CLEAR` with the `cal` command
      (see below).
+   - Set the turbidity noise limits `BASE_FLOOR_NTU` and `NTU_MIN_RISE`
+     (see below).
 4. Plug in the ESP32 and click **→ Upload** in the PlatformIO bar. The
    libraries download by themselves.
 5. Click the **plug icon (Serial Monitor)** to see the readings every minute.
@@ -85,6 +88,9 @@ Divider wiring: sensor output → 12k → ESP32 pin → 10k → GND.
 | `del <id>` | Removes a node |
 | `move <id> <metres>` | Moves a node |
 | `cal` | Prints the raw sensor voltages, for calibrating |
+| `arm` / `disarm` | Turns sensor-problem notifications on or off (remembered after turning off) |
+| `test` | Sends a test notification to your phone |
+| `wifi` | Shows whether WiFi is connected and how many notifications were sent |
 | `help` | Lists the commands |
 
 ### Calibrating
@@ -92,24 +98,58 @@ Divider wiring: sensor output → 12k → ESP32 pin → 10k → GND.
 - **pH**: put the probe in pH 7 buffer, type `cal`, and copy the pH voltage
   into `PH_V7`. Rinse it, then do the same in pH 4 buffer for `PH_V4`.
 - **Turbidity**: put the sensor in clear water, type `cal`, and copy the
-  voltage into `TURB_V_CLEAR`.
+  voltage into `TURB_V_CLEAR`. Then leave it in still tap water for 30
+  minutes and watch how much the turbidity reading wobbles from minute to
+  minute. Set `BASE_FLOOR_NTU` and `NTU_MIN_RISE` a little above that
+  (they start at 20 and 25 NTU).
 - Store the pH probe with its cap on and potassium chloride (KCl) storage
   solution inside. Never store it dry or in distilled water.
 
 ## Phone alerts
 
-The board shows up over Bluetooth as `RiverNode-N1`. Open the phone page:
+### WiFi notifications (main)
+
+Pop-ups on your phone through **ntfy**, a free app for iPhone and Android:
+
+- **Pollution / watch alert:** what it probably is and how sure, the 4
+  readings next to normal, likely pollutants, where the source probably is,
+  and the water speed
+- **Water speed:** when the same pollution reaches a second node
+- **Sensor problem:** a probe unplugged, stuck or reading impossible values
+  for 3 minutes, but only once the sensors are **armed** (type `arm` when the
+  probes are in the water, so setting up doesn't set off notifications)
+
+To set it up:
+
+1. Install the ntfy app and subscribe to a topic name that's hard to guess,
+   e.g. `rivernode-` followed by random letters.
+2. Copy `src/secrets_example.h` to `src/secrets.h` and fill in your WiFi
+   name, password and the topic. `secrets.h` is in `.gitignore`, so it never
+   goes onto GitHub.
+3. Upload. You'll get a "River node N1 is online" notification once it
+   connects. Type `test` to send another, or `wifi` to check the connection.
+
+The ESP32 only joins **2.4 GHz** WiFi without a login page. A phone hotspot
+works (on an iPhone: Settings > Personal Hotspot > turn on "Maximise
+Compatibility"). Anyone can watch the alerts arrive without the app by
+opening `ntfy.sh/<your topic>` in a browser.
+
+### Bluetooth page (backup)
+
+The board also shows up over Bluetooth as `RiverNode-N1`. Open the phone page:
 
 **https://barkshavings008.github.io/River-monitoring-nodes/phone/**
 
 - **iPhone:** use the free **Bluefy** browser app (Safari can't use Bluetooth).
 - **Android:** use Chrome.
 
-Tap **Connect**, or **Try a demo** to see it without the board. Keep the page
-open with the screen on to get alerts. Bluetooth reaches about 10–30 m.
+Tap **Connect**, or **Try a demo** to see it without the board. It shows the
+live readings, every node, and buttons to arm the sensors or send a test
+notification. Keep the page open with the screen on. Bluetooth reaches about
+10–30 m.
 
-The page is served by GitHub Pages from the `docs/` folder (Settings → Pages
-→ Deploy from a branch → `main` / `docs`).
+The page is served by GitHub Pages from the `docs/` folder (Settings > Pages
+> Deploy from a branch > `main` / `docs`).
 
 ## Simulator
 
@@ -124,9 +164,9 @@ in a browser. See [simulator/README.md](simulator/README.md).
 pio test -e native
 ```
 
-60 unit tests run on a computer: the pollution rules, sensor conversions,
+71 unit tests run on a computer: the pollution rules, sensor conversions,
 fault checks, learning normal, persistence, the whole engine, the river
-network, the water speed and the phone messages.
+network, the water speed, and the phone messages and notifications.
 
 ## Folders
 
@@ -142,8 +182,12 @@ network, the water speed and the phone messages.
 
 - Four sensors can't tell every pollutant apart, so labels are likely
   candidates only.
+- The turbidity noise limits trade false alerts against sensitivity: a
+  diluted sewage overflow is usually only caught at the node nearest it.
+- The TDS sensor tops out at about 1120 mg/L, so it can't tell brackish
+  water from seawater.
 - The nodes don't talk to each other by radio yet. The other nodes are
   simulated (`SIM_REMOTE_NODES` in `config.h`).
 - The water speed is only known after a pollution plume has passed two nodes.
-- Phone alerts only arrive while the page is open and the phone is in
-  Bluetooth range.
+- WiFi notifications need WiFi with internet. Rivers rarely have WiFi, so a
+  real deployment would use LoRa radio or a mobile (cellular) connection.

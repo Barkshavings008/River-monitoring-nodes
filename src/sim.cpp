@@ -38,7 +38,7 @@ struct Reading sim_reading(char role, unsigned long minute, unsigned long sample
     bool rain_time = c >= SIM_RAIN_START && c < SIM_RAIN_END;
     if (rain_time && (role == SIM_LOCAL || cycle % 2 == 0)) {
         p.tds *= 0.80f;
-        p.ntu *= 3.2f;
+        p.ntu = 120.0f;   // muddy storm water
         p.temp -= 0.8f;
     }
 

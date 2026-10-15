@@ -40,7 +40,10 @@ void baseline_reset(struct Baseline *baseline) {
 
 // Called once a minute with that minute's medians.
 // add[s] == false freezes sensor s (alert on, rain, or sensor fault).
-void baseline_add_minute(struct Baseline *baseline, float values[], bool valid[], bool add[]) {
+// track_ph == false leaves this minute out of the 24 h pH range (used while
+// pollution is seen, so an acid spill doesn't look like an algae pH swing).
+void baseline_add_minute(struct Baseline *baseline, float values[], bool valid[], bool add[],
+    bool track_ph) {
     bool any = false;
     for (int s = 0; s < S_COUNT; s++) {
         if (valid[s] && add[s]) {
@@ -65,7 +68,7 @@ void baseline_add_minute(struct Baseline *baseline, float values[], bool valid[]
         baseline->learned_minutes++;
     }
 
-    track_ph_day(baseline, valid[S_PH], values[S_PH]);
+    track_ph_day(baseline, valid[S_PH] && track_ph, values[S_PH]);
     track_ph_drift(baseline);
 }
 
