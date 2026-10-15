@@ -38,10 +38,10 @@ void test_baseline_warmup_and_freeze(void) {
     bool valid[S_COUNT] = { true, true, true, true };
     bool add[S_COUNT] = { true, true, true, true };
     for (int m = 0; m + 1 < BASELINE_MIN_MINUTES; m++) {
-        baseline_add_minute(&baseline, values, valid, add);
+        baseline_add_minute(&baseline, values, valid, add, true);
     }
     TEST_ASSERT_FALSE(baseline_ready(&baseline));
-    baseline_add_minute(&baseline, values, valid, add);
+    baseline_add_minute(&baseline, values, valid, add, true);
     TEST_ASSERT_TRUE(baseline_ready(&baseline));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 200.0f, baseline.median[S_TDS]);
 
@@ -49,9 +49,55 @@ void test_baseline_warmup_and_freeze(void) {
     float polluted[S_COUNT] = { 4.0f, 900.0f, 40.0f, 17.0f };
     bool frozen[S_COUNT] = { false, false, false, false };
     for (int m = 0; m < 20; m++) {
-        baseline_add_minute(&baseline, polluted, valid, frozen);
+        baseline_add_minute(&baseline, polluted, valid, frozen, false);
     }
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 200.0f, baseline.median[S_TDS]);
+}
+
+// Minutes with pollution are left out of the 24 h pH range, so an acid
+// spill can't look like the day-night pH swing of algae
+void test_acid_spill_not_in_ph_day_range(void) {
+    baseline_reset(&baseline);
+    float clean[S_COUNT] = { 7.2f, 200.0f, 8.0f, 17.0f };
+    float acid[S_COUNT] = { 4.6f, 600.0f, 18.0f, 17.0f };
+    bool valid[S_COUNT] = { true, true, true, true };
+    bool add[S_COUNT] = { true, true, true, true };
+    bool frozen[S_COUNT] = { false, false, false, false };
+    for (int m = 0; m < NUTRIENT_MIN_MINUTES; m++) {
+        if (m >= 300 && m < 320) {
+            baseline_add_minute(&baseline, acid, valid, frozen, false);
+        } else {
+            baseline_add_minute(&baseline, clean, valid, add, true);
+        }
+    }
+    float low = 0.0f;
+    float high = 0.0f;
+    TEST_ASSERT_TRUE(baseline_ph_day_range(&baseline, &low, &high));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.2f, low);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.2f, high);
+}
+
+// Before the warm-up ends the rules can't run, so a spill then can't be
+// told apart from normal water: those minutes stay out of the pH range too
+void test_ph_range_starts_after_warm_up(void) {
+    engine_begin(&engine, "N1");
+    struct Node_report report;
+    struct Alert_event events[MAX_TEST_EVENTS];
+    for (unsigned long m = 0; m < BASELINE_MIN_MINUTES + 10; m++) {
+        for (int k = 0; k < SIM_SAMPLES_PER_MIN; k++) {
+            struct Reading r = sim_reading(SIM_LOCAL, 0, k);
+            if (m < 2) {
+                r.value[S_PH] = 4.6f;   // acid in the first 2 minutes
+            }
+            engine_add_sample(&engine, r);
+        }
+        engine_close_minute(&engine, m * 60, &report, events, MAX_TEST_EVENTS);
+    }
+    for (int h = 0; h < PH_DAY_BUCKETS; h++) {
+        if (engine.baseline.hour_has[h]) {
+            TEST_ASSERT_TRUE(engine.baseline.hour_min[h] > 6.5f);
+        }
+    }
 }
 
 void test_persistence_needs_three_minutes_on_five_off(void) {
@@ -117,6 +163,12 @@ void test_engine_simulated_scenario(void) {
     TEST_ASSERT_TRUE(saw_alert_on);
     TEST_ASSERT_TRUE(saw_alert_off);
     TEST_ASSERT_EQUAL(ST_NORMAL, report.state);
+    // The acid spill (pH 4.6) was left out of the 24 h pH range for the algae rule
+    for (int h = 0; h < PH_DAY_BUCKETS; h++) {
+        if (engine.baseline.hour_has[h]) {
+            TEST_ASSERT_TRUE(engine.baseline.hour_min[h] > 6.5f);
+        }
+    }
 }
 
 // A pattern that keeps coming and going must not leak into "normal"
@@ -141,7 +193,7 @@ void test_baseline_held_after_pattern_clears(void) {
             for (int k = 0; k < SIM_SAMPLES_PER_MIN; k++) {
                 struct Reading r = sim_reading(SIM_LOCAL, 0, k);
                 if (i < 3) {
-                    r.value[S_TDS] = 1800.0f;      // salt rule fires
+                    r.value[S_TDS] = 1000.0f;      // salt rule fires
                 } else {
                     r.value[S_TDS] *= 1.08f;       // no rule fires
                 }
@@ -174,6 +226,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_median_ignores_spike);
     RUN_TEST(test_baseline_warmup_and_freeze);
+    RUN_TEST(test_acid_spill_not_in_ph_day_range);
+    RUN_TEST(test_ph_range_starts_after_warm_up);
     RUN_TEST(test_persistence_needs_three_minutes_on_five_off);
     RUN_TEST(test_engine_simulated_scenario);
     RUN_TEST(test_baseline_held_after_pattern_clears);

@@ -1,6 +1,8 @@
 #include "commands.h"
 #include "display.h"
 #include "sensors.h"
+#include "phone_alerts.h"
+#include "wifi_alerts.h"
 #include <Arduino.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +20,7 @@ void run_command(char *command, struct River_network *network, unsigned long now
 void add_command(struct River_network *network, unsigned long now_min);
 void del_command(struct River_network *network, unsigned long now_min);
 void move_command(struct River_network *network, unsigned long now_min);
+void wifi_command(void);
 bool read_metres(const char *text, unsigned long *metres);
 ////////////////////////
 
@@ -57,6 +60,20 @@ void run_command(char *command, struct River_network *network, unsigned long now
         del_command(network, now_min);
     } else if (strcmp(word, "move") == 0) {
         move_command(network, now_min);
+    } else if (strcmp(word, "arm") == 0) {
+        phone_alerts_set_armed(true);
+        print_message("Sensor-problem notifications armed (remembered after turning off)");
+    } else if (strcmp(word, "disarm") == 0) {
+        phone_alerts_set_armed(false);
+        print_message("Sensor-problem notifications off");
+    } else if (strcmp(word, "test") == 0) {
+        if (phone_alerts_test()) {
+            print_message("Test notification queued: it's sent once WiFi is connected (see \"wifi\")");
+        } else {
+            print_message("WiFi notifications are off - copy src/secrets_example.h to src/secrets.h");
+        }
+    } else if (strcmp(word, "wifi") == 0) {
+        wifi_command();
     } else if (strcmp(word, "cal") == 0) {
         if (SIMULATE) {
             print_message("cal: not available in SIMULATE mode");
@@ -141,6 +158,30 @@ void move_command(struct River_network *network, unsigned long now_min) {
     }
     print_message(message);
     print_network_list(network, now_min);
+}
+
+// wifi: how the WiFi notifications are doing
+void wifi_command(void) {
+    struct Wifi_status status = wifi_alerts_status();
+    char message[MESSAGE_SIZE];
+    if (!status.enabled) {
+        print_message("WiFi notifications: off - copy src/secrets_example.h to src/secrets.h");
+        return;
+    }
+    if (status.connected) {
+        snprintf(message, MESSAGE_SIZE, "WiFi: connected to %s (%s)", status.network, status.ip);
+    } else {
+        snprintf(message, MESSAGE_SIZE, "WiFi: trying to connect to %s (2.4 GHz, no login page)", WIFI_SSID_1);
+    }
+    print_message(message);
+    snprintf(message, MESSAGE_SIZE, "Notifications: %d sent, %d failed, %d waiting, last answer %d",
+             status.sent, status.failed, status.waiting, status.last_code);
+    print_message(message);
+    if (phone_alerts_armed()) {
+        print_message("Sensor-problem notifications: armed");
+    } else {
+        print_message("Sensor-problem notifications: not armed");
+    }
 }
 
 // Turns text like "1500" into a number. Returns false if it's empty or not a number.

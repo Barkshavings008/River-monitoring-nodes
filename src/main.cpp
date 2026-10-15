@@ -11,6 +11,8 @@
 #include "water_speed.h"
 #include "phone_messages.h"
 #include "bluetooth.h"
+#include "wifi_alerts.h"
+#include "phone_alerts.h"
 
 #define MAX_EVENTS 8
 #define MAX_SPEEDS 4
@@ -35,6 +37,7 @@ char phone_line[BLE_LINE_SIZE];    // one message for the phone
 // Function prototypes//
 ////////////////////////
 void setup_river_layout(void);
+void print_wifi_banner(void);
 void check_phone(void);
 void send_report_to_phone(void);
 void send_minute_to_phone(struct Alert_event events[], int num_events, struct Speed_estimate speeds[],
@@ -57,8 +60,10 @@ void setup() {
 #if BLUETOOTH
     bluetooth_begin(NODE_ID);
 #endif
+    phone_alerts_begin();   // WiFi notifications (does nothing without src/secrets.h)
 
     print_banner(&network);
+    print_wifi_banner();
     last_sample_ms = millis();
     last_minute_ms = last_sample_ms;
 }
@@ -107,6 +112,8 @@ void loop() {
         latest_report = report;
         latest_assessment = assessment;
         have_report = true;
+        phone_alerts_minute(events, num_events, report, assessment, &speed_tracker, speeds, num_speeds,
+                            minute_index);
         send_minute_to_phone(events, num_events, speeds, num_speeds);
     }
 }
@@ -132,13 +139,47 @@ void setup_river_layout(void) {
 #endif
 }
 
+// Says whether WiFi notifications are set up
+void print_wifi_banner(void) {
+    if (!WIFI_ALERTS) {
+        Serial.println("WiFi notifications: off (WIFI_ALERTS is 0)");
+    } else if (!wifi_alerts_enabled()) {
+        Serial.println("WiFi notifications: off - copy src/secrets_example.h to src/secrets.h and fill it in");
+    } else {
+        Serial.print("WiFi notifications: joining \"");
+        Serial.print(WIFI_SSID_1);
+        Serial.print("\", sending to ntfy topic ");
+        Serial.println(NTFY_TOPIC);
+    }
+    Serial.print("Sensor-problem notifications: ");
+    if (phone_alerts_armed()) {
+        Serial.println("armed (type \"disarm\" to turn off)");
+    } else {
+        Serial.println("not armed (type \"arm\" once the probes are installed)");
+    }
+}
+
 // A phone that just connected (or asked with "refresh") gets the newest
-// report and the node list straight away instead of waiting for the next minute
+// report and the node list straight away instead of waiting for the next
+// minute. The Bluetooth page can also arm the sensors or send a test.
 void check_phone(void) {
     char request[REQUEST_SIZE];
     bool send_now = bluetooth_just_connected();
-    if (bluetooth_take_request(request, REQUEST_SIZE) && strcmp(request, "refresh") == 0) {
-        send_now = true;
+    if (bluetooth_take_request(request, REQUEST_SIZE)) {
+        if (strcmp(request, "refresh") == 0) {
+            send_now = true;
+        } else if (strcmp(request, "arm") == 0) {
+            phone_alerts_set_armed(true);
+            print_message("Sensor-problem notifications armed (from the phone)");
+            send_now = true;
+        } else if (strcmp(request, "disarm") == 0) {
+            phone_alerts_set_armed(false);
+            print_message("Sensor-problem notifications off (from the phone)");
+            send_now = true;
+        } else if (strcmp(request, "test") == 0) {
+            phone_alerts_test();
+            print_message("Test notification queued (from the phone)");
+        }
     }
     if (send_now) {
         send_report_to_phone();
@@ -151,7 +192,8 @@ void send_report_to_phone(void) {
         return;
     }
     int length = build_status_message(phone_line, BLE_LINE_SIZE, latest_report, latest_assessment,
-                                      &speed_tracker, minute_index);
+                                      &speed_tracker, minute_index, phone_alerts_wifi_state(),
+                                      phone_alerts_armed());
     bluetooth_send_line(phone_line, length);
     length = build_nodes_message(phone_line, BLE_LINE_SIZE, &network, minute_index);
     bluetooth_send_line(phone_line, length);

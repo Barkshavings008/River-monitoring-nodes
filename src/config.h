@@ -131,15 +131,33 @@
 #define RANGE_PH_MIN 0.0f
 #define RANGE_PH_MAX 14.0f
 #define RANGE_TDS_MIN 0.0f
-#define RANGE_TDS_MAX 5000.0f
+// The STJF TDS board can't output more than 2.3 V (about 1120 mg/L at 25 C,
+// more in cold water once it's corrected to 25 C). These are voltages so they
+// work at any water temperature:
+#define TDS_V_MAXED 2.2f            // at or above this the sensor is pinned at its top (very
+                                    // salty water), so a steady reading isn't "stuck"
+#define TDS_V_IMPOSSIBLE 2.6f       // the board can't output this much: wiring fault
 #define RANGE_NTU_MAX 3000.0f
 #define RANGE_TEMP_MIN -5.0f
 #define RANGE_TEMP_MAX 50.0f
+// A jump of more than TEMP_JUMP_C in one minute is only a fault if it comes
+// straight back the next minute (within TEMP_RETURN_C of where it started).
+// A jump that stays could be real, e.g. a warm outflow reaching the probe.
 #define TEMP_JUMP_C 3.0f
+#define TEMP_RETURN_C 1.0f
 
 // Smallest baseline we divide by (stops dividing by zero)
 #define BASE_FLOOR_TDS 1.0f
-#define BASE_FLOOR_NTU 1.0f
+// The TS-300B curve is very steep near clear water (4.2 V is about 1 NTU but
+// 4.1 V is about 360 NTU), so normal ADC wobble is tens of NTU. Turbidity
+// ratios use at least this as "normal", and a turbidity rise only counts if
+// it's also more than NTU_MIN_RISE above normal. These are starting values:
+// leave the sensor in still tap water for 30 minutes and see how much the
+// minute readings move, then set both to a bit more than that. Higher is
+// safer against false alerts but misses diluted sewage (a sewage overflow
+// mixed into a stream may only add 30 NTU).
+#define BASE_FLOOR_NTU 20.0f
+#define NTU_MIN_RISE 25.0f
 
 /////////////////////////
 ///// B. RAIN FILTER ////
@@ -171,8 +189,7 @@
 
 #define SEW_PH_DROP_MIN 0.3f
 #define SEW_PH_DROP_MAX 1.0f
-#define SEW_TDS_RISE_MIN 0.20f
-#define SEW_TDS_RISE_MAX 0.50f
+#define SEW_TDS_RISE_MIN 0.20f      // no upper limit: a big spill into a low-salt river still counts
 #define SEW_NTU_RATIO 2.0f
 #define SEW_TEMP_RISE_MIN 0.5f
 #define SEW_TEMP_RISE_MAX 2.0f
@@ -185,12 +202,14 @@
 
 #define NUT_PH_SWING 1.0f
 #define NUT_PH_HIGH 9.0f
-#define NUT_TDS_RISE_MIN 0.10f
+#define NUT_TDS_RISE_MIN 0.10f      // optional: fertiliser nitrate barely moves TDS
 #define NUT_TDS_RISE_MAX 0.30f
 #define NUT_TEMP_WARM 25.0f
 
-#define THERM_TEMP_RISE 2.0f
-#define THERM_TEMP_ABS 28.0f
+// "Normal" is a 24 h median, not the time of day, and shallow streams warm
+// 2-4 C on a sunny afternoon, so the rise has to be more than that
+#define THERM_TEMP_RISE 3.0f
+#define THERM_TEMP_ABS 30.0f        // Sydney summer rivers can reach 28 C on their own
 #define THERM_PH_TOL 0.3f
 #define THERM_TDS_TOL 0.10f
 #define THERM_NTU_RATIO 1.5f
@@ -200,14 +219,20 @@
 #define SED_TDS_TOL 0.10f
 #define SED_PH_TOL 0.3f
 
-#define SALT_TDS_ABS 1500.0f
-#define SALT_PH_TOL 0.3f
+// Seawater pushing upstream. The TDS sensor tops out at about 1120 mg/L, so
+// the limit has to be below that. Seawater is pH ~8.1, so mixing with it can
+// raise a river's pH by up to about 1.
+#define SALT_TDS_ABS 900.0f
+#define SALT_PH_RISE_MAX 1.0f
+#define SALT_PH_DROP_MAX 0.3f
 #define SALT_NTU_RATIO 1.5f
 
 // Treated wastewater / fertiliser runoff: clear water with extra dissolved
 // salts and a slightly lower pH
-#define EFF_TDS_RISE 0.10f
-#define EFF_PH_DROP_MIN 0.2f
+// (0.25 pH and 15 % TDS: a bit above cheap probe drift, but still catches
+// a small dose of fertiliser)
+#define EFF_TDS_RISE 0.15f
+#define EFF_PH_DROP_MIN 0.25f
 #define EFF_PH_DROP_MAX 1.0f
 #define EFF_NTU_RATIO 1.5f      // turbidity has to stay below this (muddy = sewage rule instead)
 #define EFF_TEMP_RISE_MIN 0.3f
@@ -256,6 +281,42 @@
 #endif
 #define BLE_NAME_PREFIX "RiverNode-" // the board shows up as RiverNode-N1
 #define BLE_LINE_SIZE 4096           // biggest message sent to the phone (a full network is about 3.9 KB)
+
+/////////////////////////
+////// WIFI ALERTS //////
+/////////////////////////
+
+// Pop-up notifications on your phone through the free ntfy app (ntfy.sh).
+// Your WiFi name, password and ntfy topic go in src/secrets.h: copy
+// src/secrets_example.h to src/secrets.h and fill it in. secrets.h is in
+// .gitignore, so they never end up on GitHub. Without it, WiFi stays off and
+// the Bluetooth page still works.
+#ifndef WIFI_ALERTS
+#define WIFI_ALERTS 1
+#endif
+#if defined(__has_include)
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+#endif
+#ifndef WIFI_SSID_1
+#define WIFI_SSID_1 ""
+#define WIFI_PASSWORD_1 ""
+#endif
+#ifndef WIFI_SSID_2
+#define WIFI_SSID_2 ""               // optional second network (e.g. home WiFi for testing)
+#define WIFI_PASSWORD_2 ""
+#endif
+#ifndef NTFY_TOPIC
+#define NTFY_TOPIC ""
+#endif
+#define NTFY_SERVER "https://ntfy.sh"
+#define NOTIFY_SIZE 1600             // biggest notification (JSON) sent to ntfy
+#define NOTIFY_QUEUE 6               // notifications waiting while WiFi connects
+#define NOTIFY_TRIES 3               // attempts before a notification is dropped
+#define NOTIFY_ON_START 1            // 1 = "N1 is online" notification after turning on
+#define FAULT_NOTIFY_MIN 3           // a sensor problem must last this many minutes before
+                                     // it's sent (only once the sensors are armed)
 
 /////////////////////////
 //////// DISPLAY ////////

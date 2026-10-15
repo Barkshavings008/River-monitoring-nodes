@@ -85,6 +85,7 @@ void print_banner(struct River_network *network) {
 
 void print_help(void) {
     Serial.println("Commands: list | add <id> <metres> [place] | del <id> | move <id> <metres> | cal | help");
+    Serial.println("Phone:    arm | disarm (sensor-problem notifications) | test (send one now) | wifi");
 }
 
 // One line for each label that turned on or off this minute
