@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 // Text being built up. If it ever runs out of room, full gets set and the
 // message isn't sent (half a message would just confuse the phone).
@@ -28,11 +29,23 @@ void add_short_label(struct Text_out *t, enum Label_id id);
 void add_speed(struct Text_out *t, struct Speed_estimate estimate, unsigned long now_min);
 const char *category_word(enum Category category);
 const char *json_bool(bool value);
+void add_reading_lines(struct Text_out *t, struct Node_report report);
+void add_reading(struct Text_out *t, const char *name, float now, bool now_ok, float base,
+    bool base_ok, int decimals, const char *unit);
 ////////////////////////
+
+#define NOTIFY_TEXT_SIZE 1100   // the notification's text, before it's put into JSON
+
+// Priorities in ntfy: 5 = urgent (pops up and sounds), 3 = normal, 1 = silent
+#define PRIORITY_POLLUTION 5
+#define PRIORITY_WATCH 4
+#define PRIORITY_FAULT 4
+#define PRIORITY_SPEED 3
 
 // {"type":"status","node":"N1","min":42,...}
 int build_status_message(char *out, int size, struct Node_report report,
-    struct Network_assessment assessment, struct Speed_tracker *speed, unsigned long now_min) {
+    struct Network_assessment assessment, struct Speed_tracker *speed, unsigned long now_min,
+    const char *wifi_state, bool armed) {
     struct Text_out t = text_start(out, size);
     char code[40];
     char text[260];
@@ -90,6 +103,10 @@ int build_status_message(char *out, int size, struct Node_report report,
     add_string(&t, finding_code(assessment.finding));
     add_format(&t, ",\"finding_text\":");
     add_string(&t, text);
+
+    add_format(&t, ",\"wifi\":");
+    add_string(&t, wifi_state);
+    add_format(&t, ",\"armed\":%s", json_bool(armed));
 
     add_format(&t, ",\"speed\":");
     if (speed != NULL && speed->has_estimate) {
@@ -168,8 +185,215 @@ int build_speed_message(char *out, int size, struct Speed_estimate estimate, uns
 }
 
 /////////////////////////
+//// WIFI NOTIFICATIONS ////
+/////////////////////////
+
+// {"topic":"...","title":"...","message":"...","priority":5,"tags":["rotating_light"]}
+// The message can have line breaks in it. Returns the length, or 0 if it
+// didn't fit.
+int build_ntfy(char *out, int size, const char *topic, const char *title, const char *message,
+    int priority, const char *tag) {
+    struct Text_out t = text_start(out, size);
+    add_format(&t, "{\"topic\":");
+    add_string(&t, topic);
+    add_format(&t, ",\"title\":");
+    add_string(&t, title);
+    add_format(&t, ",\"message\":");
+    add_string(&t, message);
+    add_format(&t, ",\"priority\":%d,\"tags\":[", priority);
+    add_string(&t, tag);
+    add_format(&t, "]}");
+    return text_finish(&t);
+}
+
+// One pop-up for every pollution/watch label that turned on this minute:
+//
+//   POLLUTION ALERT at N1
+//   Likely heavy metals / acid mine drainage (77% sure)
+//   Also: Likely industrial discharge (67% sure)
+//
+//   pH 4.60 (normal 7.20)
+//   ...
+//   Possible pollutants: ...
+//   Source likely between N0 (0 m) and N1 (1000 m) ...
+//   Water speed: about 0.61 m/s (N0 to N1, 12 min ago)
+//
+// Returns 0 if no pollution or watch label turned on.
+int build_ntfy_alert(char *out, int size, const char *topic, struct Alert_event events[],
+    int num_events, struct Node_report report, struct Network_assessment assessment,
+    struct Speed_tracker *speed, unsigned long now_min) {
+    char text[NOTIFY_TEXT_SIZE];
+    struct Text_out t = text_start(text, NOTIFY_TEXT_SIZE);
+    int found = 0;
+    bool pollution = false;
+    enum Label_id first = LBL_NONE;
+
+    // Pollution labels first, then watch labels
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < num_events; i++) {
+            struct Label_info info = get_label_info(events[i].id);
+            bool wanted = (pass == 0 && info.category == CAT_POLLUTION) ||
+                          (pass == 1 && info.category == CAT_WATCH);
+            if (!events[i].on || !wanted) {
+                continue;
+            }
+            if (found == 0) {
+                first = events[i].id;
+            } else {
+                add_format(&t, "Also: ");
+            }
+            add_format(&t, "%s (%d%% sure)\n", info.name, (int)(events[i].confidence * 100.0f + 0.5f));
+            if (info.category == CAT_POLLUTION) {
+                pollution = true;
+            }
+            found++;
+        }
+    }
+    if (found == 0) {
+        return 0;
+    }
+
+    add_format(&t, "\n");
+    add_reading_lines(&t, report);
+    struct Label_info main_info = get_label_info(first);
+    if (main_info.pollutants[0] != '\0') {
+        add_format(&t, "\nPossible pollutants: %s\n", main_info.pollutants);
+    }
+    char where[260];
+    finding_text(assessment, where, 260);
+    if (where[0] != '\0') {
+        add_format(&t, "%s\n", where);
+    }
+    if (speed != NULL && speed->has_estimate) {
+        add_format(&t, "Water speed: about %.2f m/s (%s to %s, %lu min ago)\n",
+                   speed->latest.metres_per_sec, speed->latest.from_id, speed->latest.to_id,
+                   now_min - speed->latest.found_min);
+    }
+    if (SIMULATE) {
+        add_format(&t, "(Simulated readings)\n");
+    }
+    add_format(&t, "Confirm with a lab water sample.");
+    if (text_finish(&t) == 0) {
+        return 0;
+    }
+
+    char title[64];
+    int priority = PRIORITY_WATCH;
+    const char *tag = "warning";
+    if (pollution) {
+        snprintf(title, 64, "POLLUTION ALERT at %s", report.id);
+        priority = PRIORITY_POLLUTION;
+        tag = "rotating_light";
+    } else {
+        snprintf(title, 64, "Watch at %s", report.id);
+    }
+    return build_ntfy(out, size, topic, title, text, priority, tag);
+}
+
+// One pop-up for the new water speed(s) worked out this minute
+int build_ntfy_speed(char *out, int size, const char *topic, struct Speed_estimate speeds[],
+    int num_speeds) {
+    if (num_speeds <= 0) {
+        return 0;
+    }
+    char text[NOTIFY_TEXT_SIZE];
+    struct Text_out t = text_start(text, NOTIFY_TEXT_SIZE);
+    for (int i = 0; i < num_speeds; i++) {
+        // The same pair of nodes can come up for two labels at once: only say it once
+        bool repeat = false;
+        for (int k = 0; k < i; k++) {
+            if (strcmp(speeds[k].from_id, speeds[i].from_id) == 0 &&
+                strcmp(speeds[k].to_id, speeds[i].to_id) == 0 && speeds[k].minutes == speeds[i].minutes) {
+                repeat = true;
+            }
+        }
+        if (repeat) {
+            continue;
+        }
+        add_format(&t, "%s went from %s to %s: %lu m in %lu min, about %.2f m/s (%.1f km/h).\n",
+                   get_label_info(speeds[i].label).short_name, speeds[i].from_id, speeds[i].to_id,
+                   speeds[i].metres, speeds[i].minutes, speeds[i].metres_per_sec,
+                   speeds[i].metres_per_sec * 3.6f);
+    }
+    add_format(&t, "Worked out from the pollution reaching one node and then the next.");
+    if (text_finish(&t) == 0) {
+        return 0;
+    }
+    char title[64];
+    snprintf(title, 64, "Water speed: about %.2f m/s", speeds[0].metres_per_sec);
+    return build_ntfy(out, size, topic, title, text, PRIORITY_SPEED, "ocean");
+}
+
+// A pop-up for a broken sensor (sensor = S_COUNT means the pH probe needs recalibrating)
+int build_ntfy_fault(char *out, int size, const char *topic, struct Node_report report, int sensor) {
+    char title[64];
+    char text[NOTIFY_TEXT_SIZE];
+    if (sensor >= 0 && sensor < S_COUNT) {
+        snprintf(title, 64, "Sensor problem at %s: %s", report.id, sensor_name(sensor));
+        snprintf(text, NOTIFY_TEXT_SIZE, "%s sensor: %s.\nIts readings are left out until it's fixed, "
+                 "so it can't cause a false alert.", sensor_name(sensor),
+                 fault_reason(sensor, report.fault[sensor]));
+    } else {
+        snprintf(title, 64, "Sensor problem at %s: pH probe drifting", report.id);
+        snprintf(text, NOTIFY_TEXT_SIZE, "The pH reading has drifted steadily for 3 days while the "
+                 "other sensors stayed put.\nRecalibrate the pH probe in pH 7 and pH 4 buffers.");
+    }
+    return build_ntfy(out, size, topic, title, text, PRIORITY_FAULT, "wrench");
+}
+
+// A pop-up with the intro line and the current readings (used for "online",
+// "test" and "armed" notifications)
+int build_ntfy_readings(char *out, int size, const char *topic, const char *title,
+    const char *intro, struct Node_report report, int priority, const char *tag) {
+    char text[NOTIFY_TEXT_SIZE];
+    struct Text_out t = text_start(text, NOTIFY_TEXT_SIZE);
+    add_format(&t, "%s\n", intro);
+    if (report.state != ST_BASELINE_BUILDING || report.now_valid[S_PH]) {
+        add_format(&t, "\n");
+        add_reading_lines(&t, report);
+    }
+    if (text_finish(&t) == 0) {
+        return 0;
+    }
+    // No blank line at the end
+    while (t.length > 0 && text[t.length - 1] == '\n') {
+        t.length--;
+        text[t.length] = '\0';
+    }
+    return build_ntfy(out, size, topic, title, text, priority, tag);
+}
+
+/////////////////////////
 // Function definitions//
 /////////////////////////
+
+// pH 4.60 (normal 7.20)
+// TDS 617 mg/L (normal 210)
+// Turbidity 18.2 NTU (normal 8.2)
+// Water temp 17.4 °C (normal 17.1)
+void add_reading_lines(struct Text_out *t, struct Node_report report) {
+    add_reading(t, "pH", report.now[S_PH], report.now_valid[S_PH], report.base[S_PH],
+                report.base_valid[S_PH], 2, "");
+    add_reading(t, "TDS", report.now[S_TDS], report.now_valid[S_TDS], report.base[S_TDS],
+                report.base_valid[S_TDS], 0, " mg/L");
+    add_reading(t, "Turbidity", report.now[S_NTU], report.now_valid[S_NTU], report.base[S_NTU],
+                report.base_valid[S_NTU], 1, " NTU");
+    add_reading(t, "Water temp", report.now[S_TEMP], report.now_valid[S_TEMP], report.base[S_TEMP],
+                report.base_valid[S_TEMP], 1, " \xC2\xB0" "C");
+}
+
+void add_reading(struct Text_out *t, const char *name, float now, bool now_ok, float base,
+    bool base_ok, int decimals, const char *unit) {
+    if (!now_ok || isnan(now)) {
+        add_format(t, "%s: no reading\n", name);
+        return;
+    }
+    add_format(t, "%s %.*f%s", name, decimals, now, unit);
+    if (base_ok && !isnan(base)) {
+        add_format(t, " (normal %.*f)", decimals, base);
+    }
+    add_format(t, "\n");
+}
 
 struct Text_out text_start(char *out, int size) {
     struct Text_out t;

@@ -188,10 +188,12 @@ void test_effluent_not_when_muddy_or_ph_steady(void) {
     TEST_ASSERT_TRUE(has_label(muddy, LBL_SEWAGE, NULL));
     // pH didn't drop
     TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(7.15f, 260.0f, 8.5f, 17.2f)).id);
-    // Only a small TDS rise (15 %, within cheap probe drift)
-    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(6.85f, 241.0f, 8.5f, 17.2f)).id);
-    // Only a small pH drop (0.25)
-    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(6.95f, 260.0f, 8.5f, 17.2f)).id);
+    // Only a small TDS rise (12 %, within cheap probe drift)
+    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(6.85f, 235.0f, 8.5f, 17.2f)).id);
+    // Only a small pH drop (0.2)
+    TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(7.0f, 260.0f, 8.5f, 17.2f)).id);
+    // A small dose of plant food: pH down 0.3, TDS up 17 %
+    TEST_ASSERT_EQUAL(LBL_EFFLUENT, rule_effluent(make_inputs(6.9f, 246.0f, 8.5f, 17.2f)).id);
     // Big pH drop is acid, not this
     TEST_ASSERT_EQUAL(LBL_NONE, rule_effluent(make_inputs(5.8f, 260.0f, 8.5f, 17.2f)).id);
 }

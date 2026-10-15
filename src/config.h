@@ -225,9 +225,10 @@
 
 // Treated wastewater / fertiliser runoff: clear water with extra dissolved
 // salts and a slightly lower pH
-// (0.3 pH and 20 % TDS, so cheap probe drift doesn't set it off)
-#define EFF_TDS_RISE 0.20f
-#define EFF_PH_DROP_MIN 0.3f
+// (0.25 pH and 15 % TDS: a bit above cheap probe drift, but still catches
+// a small dose of fertiliser)
+#define EFF_TDS_RISE 0.15f
+#define EFF_PH_DROP_MIN 0.25f
 #define EFF_PH_DROP_MAX 1.0f
 #define EFF_NTU_RATIO 1.5f      // turbidity has to stay below this (muddy = sewage rule instead)
 #define EFF_TEMP_RISE_MIN 0.3f
@@ -276,6 +277,42 @@
 #endif
 #define BLE_NAME_PREFIX "RiverNode-" // the board shows up as RiverNode-N1
 #define BLE_LINE_SIZE 4096           // biggest message sent to the phone (a full network is about 3.9 KB)
+
+/////////////////////////
+////// WIFI ALERTS //////
+/////////////////////////
+
+// Pop-up notifications on your phone through the free ntfy app (ntfy.sh).
+// Your WiFi name, password and ntfy topic go in src/secrets.h: copy
+// src/secrets_example.h to src/secrets.h and fill it in. secrets.h is in
+// .gitignore, so they never end up on GitHub. Without it, WiFi stays off and
+// the Bluetooth page still works.
+#ifndef WIFI_ALERTS
+#define WIFI_ALERTS 1
+#endif
+#if defined(__has_include)
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+#endif
+#ifndef WIFI_SSID_1
+#define WIFI_SSID_1 ""
+#define WIFI_PASSWORD_1 ""
+#endif
+#ifndef WIFI_SSID_2
+#define WIFI_SSID_2 ""               // optional second network (e.g. home WiFi for testing)
+#define WIFI_PASSWORD_2 ""
+#endif
+#ifndef NTFY_TOPIC
+#define NTFY_TOPIC ""
+#endif
+#define NTFY_SERVER "https://ntfy.sh"
+#define NOTIFY_SIZE 1600             // biggest notification (JSON) sent to ntfy
+#define NOTIFY_QUEUE 6               // notifications waiting while WiFi connects
+#define NOTIFY_TRIES 3               // attempts before a notification is dropped
+#define NOTIFY_ON_START 1            // 1 = "N1 is online" notification after turning on
+#define FAULT_NOTIFY_MIN 3           // a sensor problem must last this many minutes before
+                                     // it's sent (only once the sensors are armed)
 
 /////////////////////////
 //////// DISPLAY ////////
