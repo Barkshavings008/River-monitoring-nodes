@@ -34,6 +34,7 @@
 #define TDS_PIN 33
 #define TURBIDITY_PIN 32
 #define ONEWIRE_PIN 4        // DS18B20 data pin, needs a 4.7k pull-up to 3.3 V
+#define SERVO_PIN 13         // alarm servo signal wire (power the servo from 5 V, not 3.3 V)
 #define ADC_SAMPLES 16       // number of ADC reads averaged for each sample
 
 // Voltage dividers: V_sensor = V_adc * ratio. The pH module (Logo-Rnaenaor V2.0)
@@ -78,15 +79,15 @@
 // through the divider). The defaults are typical for this kind of 5 V module.
 
 // #define PH_V7 2.50f            // module output in pH 7.0 buffer
-#define PH_V7 4.00f            // module output in pH 7.0 buffer
+#define PH_V7 3.80f            // module output in pH 7.0 buffer
 #define PH_V4 4.55f            // module output in pH 4.0 buffer (THIS NEEDS TO BE CHANGED!!!)
-#define PH_CALIBRATION_TEMP_C 25.0f // water temp the two buffers were measured at
+#define PH_CALIBRATION_TEMP_C 24.0f // water temp the two buffers were measured at
 
 // TS-300B turbidity sensor: 0-4.5 V output, the voltage goes DOWN as the water
 // gets cloudier. It uses the standard curve for this sensor family (made for
 // a 4.2 V clear-water reading), scaled to your sensor's own clear-water
 // voltage. Rated 0-1000 NTU, so readings above that are only rough.
-#define TURB_V_CLEAR 4.50f        // TS-300B output in clear water (measure your own with "cal")
+#define TURB_V_CLEAR 4.30f        // TS-300B output in clear water (measure your own with "cal")
 #define TURB_V_CURVE_CLEAR 4.20f  // clear water voltage the NTU curve was made for
 #define TURB_V_CURVE_MIN 2.50f    // below this the curve doesn't work anymore
 #define TURB_MAX_NTU 3000.0f
@@ -317,6 +318,20 @@
 #define NOTIFY_ON_START 1            // 1 = "N1 is online" notification after turning on
 #define FAULT_NOTIFY_MIN 3           // a sensor problem must last this many minutes before
                                      // it's sent (only once the sensors are armed)
+
+/////////////////////////
+////// ALARM SERVO //////
+/////////////////////////
+
+// Turns a servo when a pollution alert comes on. It stays turned (even after
+// turning the board off) until the "reset" command (see alarm_servo.cpp)
+#ifndef ALARM_SERVO
+#define ALARM_SERVO 1
+#endif
+#define SERVO_REST_ANGLE 0
+#define SERVO_ALERT_ANGLE 90
+#define SERVO_MIN_US 500     // pulse width for 0 degrees (most SG90 / MG90S servos)
+#define SERVO_MAX_US 2400    // pulse width for 180 degrees
 
 /////////////////////////
 //////// DISPLAY ////////

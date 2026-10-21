@@ -3,6 +3,7 @@
 #include "sensors.h"
 #include "phone_alerts.h"
 #include "wifi_alerts.h"
+#include "alarm_servo.h"
 #include <Arduino.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,6 +73,9 @@ void run_command(char *command, struct River_network *network, unsigned long now
         } else {
             print_message("WiFi notifications are off - copy src/secrets_example.h to src/secrets.h");
         }
+    } else if (strcmp(word, "reset") == 0) {
+        alarm_servo_reset();
+        print_message("Servo back to the rest position");
     } else if (strcmp(word, "wifi") == 0) {
         wifi_command();
     } else if (strcmp(word, "cal") == 0) {

@@ -7,4 +7,6 @@
 ////////////////////////
 bool load_armed(void);
 void save_armed(bool armed);
+bool load_servo_tripped(void);
+void save_servo_tripped(bool tripped);
 ////////////////////////

@@ -13,6 +13,7 @@
 #include "bluetooth.h"
 #include "wifi_alerts.h"
 #include "phone_alerts.h"
+#include "alarm_servo.h"
 
 #define MAX_EVENTS 8
 #define MAX_SPEEDS 4
@@ -61,6 +62,7 @@ void setup() {
     bluetooth_begin(NODE_ID);
 #endif
     phone_alerts_begin();   // WiFi notifications (does nothing without src/secrets.h)
+    alarm_servo_begin();
 
     print_banner(&network);
     print_wifi_banner();
@@ -112,6 +114,7 @@ void loop() {
         latest_report = report;
         latest_assessment = assessment;
         have_report = true;
+        alarm_servo_update(report);
         phone_alerts_minute(events, num_events, report, assessment, &speed_tracker, speeds, num_speeds,
                             minute_index);
         send_minute_to_phone(events, num_events, speeds, num_speeds);
