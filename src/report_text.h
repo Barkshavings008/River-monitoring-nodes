@@ -5,6 +5,8 @@
 #include "types.h"
 #include "network.h"
 
+#define FINDING_TEXT_SIZE 420   // the network finding sentence(s)
+
 ////////////////////////
 // Function prototypes//
 ////////////////////////
@@ -13,6 +15,7 @@ const char *fault_reason(int sensor, enum Fault_code fault);
 const char *finding_code(enum Net_finding finding);
 void label_code(struct Node_report report, char *buffer, int size);
 void finding_text(struct Network_assessment a, char *buffer, int size);
+void format_duration(char *buffer, int size, unsigned long minutes);
 void node_status(struct River_network *network, struct River_node *node, unsigned long now_min,
     char *status, int size);
 ////////////////////////

@@ -155,6 +155,24 @@ struct Rule_result rule_effluent(struct Rule_inputs in) {
     return score_result(score, LBL_EFFLUENT);
 }
 
+// For nodes without pH and TDS sensors: a big turbidity rise is all they can
+// see. Same turbidity limits as the sediment rule. Confidence is 0.5 unless
+// the temperature is known and didn't drop (so it's less likely to be rain).
+struct Rule_result rule_turbidity_only(struct Rule_inputs in) {
+    if (in.ok[S_PH] || in.ok[S_TDS]) {
+        struct Rule_result none;
+        none.id = LBL_NONE;
+        none.confidence = 0.0f;
+        return none;   // the full rules can do better
+    }
+    struct Score score = new_score();
+    score_required(&score, in.ok[S_NTU] && (times_base(in, S_NTU) > SED_NTU_RATIO ||
+                                            in.now[S_NTU] > SED_NTU_ABS) &&
+                           change_from_base(in, S_NTU) > NTU_MIN_RISE);
+    score_optional(&score, in.ok[S_TEMP] && change_from_base(in, S_TEMP) > -RAIN_TEMP_DROP);
+    return score_result(score, LBL_TURBIDITY);
+}
+
 // Runs every rule. Rain skips industrial, alkaline and sediment, because
 // rain by itself can explain those readings. Sewage and heavy metals still
 // run: sewage overflows mostly happen during rain, and storms wash mine
@@ -184,6 +202,7 @@ struct Rule_output evaluate_rules(struct Rule_inputs in) {
     }
     add_hit(&out, rule_salt(in));
     add_hit(&out, rule_effluent(in));
+    add_hit(&out, rule_turbidity_only(in));
     return out;
 }
 

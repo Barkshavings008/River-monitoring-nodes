@@ -25,6 +25,7 @@ enum Label_id {
     LBL_SEDIMENT,
     LBL_SALT,
     LBL_EFFLUENT,
+    LBL_TURBIDITY,   // nodes that only measure turbidity
     // B: filter
     LBL_RAIN,
     LBL_FAULT,
@@ -68,6 +69,7 @@ struct Rule_result {
 };
 
 #define MAX_ALSO 10  // worst case: 3 other pollution labels + 5 watch labels + rain
+                     // (the turbidity-only label can't be on with TDS-based labels)
 
 // One node's summary of the last minute. This is what gets printed, and what
 // a node would send to the other nodes over LoRa/WiFi.
@@ -88,6 +90,7 @@ struct Node_report {
     int learned_minutes;
     int learn_needed;
     bool rain_pattern;            // rain pattern this minute (before persistence)
+    bool fitted[S_COUNT];         // which sensors this node has (false = not fitted, not broken)
 };
 
 ////////////////////////

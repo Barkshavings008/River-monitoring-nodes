@@ -111,6 +111,8 @@ button:disabled { opacity: 0.5; }
 .tile .change.up { color: var(--alert); }
 .tile .change.down { color: var(--accent); }
 .tile.fault { border-color: var(--fault); }
+.tile.absent { opacity: 0.55; }
+.tile.absent .value { font-size: 18px; font-weight: 600; color: var(--muted); }
 
 #speed-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
@@ -450,6 +452,13 @@ function showStatus(m) {
         const now = m.now[s.key];
         const base = m.base[s.key];
         const value = tile.querySelector(".value");
+        const fitted = !m.fitted || m.fitted[s.key];
+        tile.classList.toggle("absent", !fitted);
+        if (!fitted) {
+            value.textContent = "not fitted";
+            tile.querySelector(".base").textContent = "";
+            continue;
+        }
         value.textContent = fmt(now, s.decimals);
         if (now !== null && s.unit) {
             const unit = document.createElement("span");
@@ -527,7 +536,7 @@ function showSpeed(speed, isNew) {
     }
     $("speed-value").textContent = "≈ " + speed.mps.toFixed(2) + " m/s (" + (speed.mps * 3.6).toFixed(1) + " km/h)";
     $("speed-detail").textContent = speed.label + " went from " + speed.from + " to " + speed.to + ": " +
-        speed.metres + " m in " + speed.minutes + " min · " + age(speed.age_min);
+        speed.metres + " m in " + took(speed) + " · " + age(speed);
     const key = speed.from + speed.to + speed.metres + speed.minutes;
     if (isNew && key !== lastSpeedLogged) {
         lastSpeedLogged = key;
@@ -535,14 +544,31 @@ function showSpeed(speed, isNew) {
     }
 }
 
-function age(minutes) {
-    if (minutes < 1) {
+// Real time (boards in demo mode count 10 s "minutes", so use seconds when sent)
+function seconds(s, minutes) {
+    if (s !== undefined) {
+        return s;
+    }
+    return minutes * 60;
+}
+function duration(s) {
+    if (s < 120) {
+        return s + " s";
+    }
+    if (s < 7200) {
+        return Math.round(s / 60) + " min";
+    }
+    return Math.round(s / 3600) + " h";
+}
+function took(speed) {
+    return duration(seconds(speed.seconds, speed.minutes));
+}
+function age(speed) {
+    const s = seconds(speed.age_s, speed.age_min);
+    if (s < 30) {
         return "just now";
     }
-    if (minutes < 60) {
-        return minutes + " min ago";
-    }
-    return Math.round(minutes / 60) + " h ago";
+    return duration(s) + " ago";
 }
 
 function showNodes(nodes) {
@@ -559,8 +585,18 @@ function showNodes(nodes) {
         where.className = "where";
         let text = (branched ? n.branch + " " : "") + n.dist + " m";
         if (n.live && n.now) {
-            text += " · pH " + fmt(n.now.ph, 2) + " · " + fmt(n.now.tds, 0) + " mg/L · " +
-                fmt(n.now.ntu, 1) + " NTU · " + fmt(n.now.temp, 1) + " °C";
+            // Only the sensors the node has (older boards don't send "fitted": show all)
+            let fitted = 15;
+            if (n.fitted !== undefined) {
+                fitted = n.fitted;
+            }
+            const parts = [];
+            if (fitted & 1) { parts.push("pH " + fmt(n.now.ph, 2)); }
+            if (fitted & 2) { parts.push(fmt(n.now.tds, 0) + " mg/L"); }
+            if (fitted & 4) { parts.push(fmt(n.now.ntu, 1) + " NTU"); }
+            if (fitted & 8) { parts.push(fmt(n.now.temp, 1) + " °C"); }
+            if (fitted === 4) { parts.push("turbidity only"); }
+            text += " · " + parts.join(" · ");
         }
         where.textContent = text;
         left.appendChild(title);

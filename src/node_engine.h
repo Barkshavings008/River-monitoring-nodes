@@ -18,12 +18,14 @@ struct Node_engine {
     int num_tds_history;
     int hold_minutes_left;                        // baseline stays frozen until this reaches 0
     int tds_history_head;
+    bool fitted[S_COUNT];                         // false = this node doesn't have that sensor
 };
 
 ////////////////////////
 // Function prototypes//
 ////////////////////////
 void engine_begin(struct Node_engine *engine, const char *id);
+void engine_set_fitted(struct Node_engine *engine, bool ph, bool tds, bool ntu, bool temp);
 void engine_add_sample(struct Node_engine *engine, struct Reading reading);
 int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
     struct Node_report *report, struct Alert_event events[], int max_events);

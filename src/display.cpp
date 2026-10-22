@@ -131,9 +131,11 @@ void print_speed_estimates(struct Speed_estimate speeds[], int num_speeds) {
         Serial.print(speeds[i].to_id);
         Serial.print(": ");
         Serial.print(speeds[i].metres);
+        char took[16];
+        format_duration(took, 16, speeds[i].minutes);
         Serial.print(" m in ");
-        Serial.print(speeds[i].minutes);
-        Serial.print(" min)");
+        Serial.print(took);
+        Serial.print(")");
         Serial.println(colour_end());
     }
 }
@@ -443,6 +445,11 @@ void print_readings(struct Node_report report) {
         format_value(now, 16, s, report.now[s], report.now_valid[s]);
         format_value(base, 16, s, report.base[s], report.base_valid[s]);
         format_change(change, 16, s, report.now[s], report.base[s], both_valid);
+        if (!report.fitted[s]) {
+            snprintf(now, 16, "not fitted");
+            base[0] = '\0';
+            change[0] = '\0';
+        }
 
         print_padded(sensor_name(s), 12);
         print_padded(now, 10);
@@ -553,8 +560,8 @@ void print_network(struct Node_report report, struct Network_assessment a,
         Serial.println(tag);
     }
 
-    char text[220];
-    finding_text(a, text, 220);
+    char text[FINDING_TEXT_SIZE];
+    finding_text(a, text, FINDING_TEXT_SIZE);
     if (text[0] != '\0') {
         Serial.print(finding_colour(a.finding));
         print_wrapped("  >> ", text, DISPLAY_WIDTH - 5);

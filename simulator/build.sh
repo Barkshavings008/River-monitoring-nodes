@@ -28,7 +28,7 @@ BUILTINS="$WASI/libclang_rt.builtins-wasm32-wasi-$WASI_VERSION.0/libclang_rt.bui
 # The same files the ESP32 uses, minus the hardware ones (sensors, commands,
 # simulator, main). DEMO_MODE=0 so it uses the real 24 h baseline.
 clang++ --target=wasm32-wasi --sysroot="$SYSROOT" -O2 -fno-exceptions -fno-rtti \
-    -mexec-model=reactor -nostdlib -DDEMO_MODE=0 \
+    -mexec-model=reactor -nostdlib -DDEMO_MODE=0 -DDEMO_ALERTS=0 \
     -I"$HERE/wasm" -I"$SRC" \
     "$SRC/types.cpp" "$SRC/labels.cpp" "$SRC/compensation.cpp" "$SRC/baseline.cpp" \
     "$SRC/rules.cpp" "$SRC/persistence.cpp" "$SRC/node_engine.cpp" "$SRC/network.cpp" \

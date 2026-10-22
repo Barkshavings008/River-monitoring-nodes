@@ -1,6 +1,7 @@
 #include "report_text.h"
 #include "labels.h"
 #include <stdio.h>
+#include <string.h>
 
 const char *fault_code_text(enum Fault_code fault) {
     if (fault == F_NO_READING) {
@@ -140,6 +141,41 @@ void finding_text(struct Network_assessment a, char *buffer, int size) {
                  "or leak nearby.", rain_nodes, all_nodes);
     } else {
         buffer[0] = '\0';
+    }
+
+    // A turbidity-only node: say what a node with all four sensors found
+    if (a.has_cause) {
+        char where[48];
+        if (a.cause_where == CAUSE_UPSTREAM) {
+            snprintf(where, 48, "%s, %ld m upstream,", a.cause_id, a.cause_gap_m);
+        } else if (a.cause_where == CAUSE_SAME_SPOT) {
+            snprintf(where, 48, "%s at the same spot", a.cause_id);
+        } else if (a.cause_where == CAUSE_DOWNSTREAM) {
+            snprintf(where, 48, "%s, %ld m downstream,", a.cause_id, a.cause_gap_m);
+        } else {
+            snprintf(where, 48, "%s", a.cause_id);
+        }
+        int used = strlen(buffer);
+        const char *space = "";
+        if (used > 0) {
+            space = " ";
+        }
+        snprintf(buffer + used, size - used, "%sOnly turbidity is measured here: it matches %s which "
+                 "found %s, so it's probably the same.", space, where,
+                 get_label_info(a.cause_label).short_name);
+    }
+}
+
+// A number of minutes as real time, e.g. "40 s", "12 min" or "3 h" (a
+// "minute" is only 10 s in demo mode, see MINUTE_MS)
+void format_duration(char *buffer, int size, unsigned long minutes) {
+    unsigned long seconds = (unsigned long)((unsigned long long)minutes * MINUTE_MS / 1000);
+    if (seconds < 120) {
+        snprintf(buffer, size, "%lu s", seconds);
+    } else if (seconds < 2 * 3600) {
+        snprintf(buffer, size, "%lu min", seconds / 60);
+    } else {
+        snprintf(buffer, size, "%lu h", seconds / 3600);
     }
 }
 
