@@ -29,6 +29,7 @@ void add_short_label(struct Text_out *t, enum Label_id id);
 void add_speed(struct Text_out *t, struct Speed_estimate estimate, unsigned long now_min);
 const char *category_word(enum Category category);
 const char *json_bool(bool value);
+int fitted_bits(struct Node_report report);
 void add_reading_lines(struct Text_out *t, struct Node_report report);
 void add_reading(struct Text_out *t, const char *name, float now, bool now_ok, float base,
     bool base_ok, int decimals, const char *unit);
@@ -48,7 +49,7 @@ int build_status_message(char *out, int size, struct Node_report report,
     const char *wifi_state, bool armed) {
     struct Text_out t = text_start(out, size);
     char code[40];
-    char text[260];
+    char text[FINDING_TEXT_SIZE];
     label_code(report, code, 40);
 
     add_format(&t, "{\"type\":\"status\",\"node\":");
@@ -78,6 +79,9 @@ int build_status_message(char *out, int size, struct Node_report report,
     add_values(&t, report.now, report.now_valid);
     add_format(&t, ",\"base\":");
     add_values(&t, report.base, report.base_valid);
+    add_format(&t, ",\"fitted\":{\"ph\":%s,\"tds\":%s,\"ntu\":%s,\"temp\":%s}",
+               json_bool(report.fitted[S_PH]), json_bool(report.fitted[S_TDS]),
+               json_bool(report.fitted[S_NTU]), json_bool(report.fitted[S_TEMP]));
 
     add_format(&t, ",\"faults\":[");
     bool first = true;
@@ -98,7 +102,7 @@ int build_status_message(char *out, int size, struct Node_report report,
     add_format(&t, ",\"learned_min\":%d,\"learn_needed_min\":%d", report.learned_minutes,
                report.learn_needed);
 
-    finding_text(assessment, text, 260);
+    finding_text(assessment, text, FINDING_TEXT_SIZE);
     add_format(&t, ",\"finding\":");
     add_string(&t, finding_code(assessment.finding));
     add_format(&t, ",\"finding_text\":");
@@ -161,7 +165,7 @@ int build_nodes_message(char *out, int size, struct River_network *network, unsi
             add_string(&t, info.short_name);
             add_format(&t, ",\"category\":");
             add_string(&t, category_word(info.category));
-            add_format(&t, ",\"now\":");
+            add_format(&t, ",\"fitted\":%d,\"now\":", fitted_bits(node->report));
             add_values(&t, node->report.now, node->report.now_valid);
         } else {
             char status[48];
@@ -259,15 +263,16 @@ int build_ntfy_alert(char *out, int size, const char *topic, struct Alert_event 
     if (main_info.pollutants[0] != '\0') {
         add_format(&t, "\nPossible pollutants: %s\n", main_info.pollutants);
     }
-    char where[260];
-    finding_text(assessment, where, 260);
+    char where[FINDING_TEXT_SIZE];
+    finding_text(assessment, where, FINDING_TEXT_SIZE);
     if (where[0] != '\0') {
         add_format(&t, "%s\n", where);
     }
     if (speed != NULL && speed->has_estimate) {
-        add_format(&t, "Water speed: about %.2f m/s (%s to %s, %lu min ago)\n",
-                   speed->latest.metres_per_sec, speed->latest.from_id, speed->latest.to_id,
-                   now_min - speed->latest.found_min);
+        char ago[16];
+        format_duration(ago, 16, now_min - speed->latest.found_min);
+        add_format(&t, "Water speed: about %.2f m/s (%s to %s, %s ago)\n",
+                   speed->latest.metres_per_sec, speed->latest.from_id, speed->latest.to_id, ago);
     }
     if (SIMULATE) {
         add_format(&t, "(Simulated readings)\n");
@@ -310,10 +315,11 @@ int build_ntfy_speed(char *out, int size, const char *topic, struct Speed_estima
         if (repeat) {
             continue;
         }
-        add_format(&t, "%s went from %s to %s: %lu m in %lu min, about %.2f m/s (%.1f km/h).\n",
+        char took[16];
+        format_duration(took, 16, speeds[i].minutes);
+        add_format(&t, "%s went from %s to %s: %lu m in %s, about %.2f m/s (%.1f km/h).\n",
                    get_label_info(speeds[i].label).short_name, speeds[i].from_id, speeds[i].to_id,
-                   speeds[i].metres, speeds[i].minutes, speeds[i].metres_per_sec,
-                   speeds[i].metres_per_sec * 3.6f);
+                   speeds[i].metres, took, speeds[i].metres_per_sec, speeds[i].metres_per_sec * 3.6f);
     }
     add_format(&t, "Worked out from the pollution reaching one node and then the next.");
     if (text_finish(&t) == 0) {
@@ -371,15 +377,24 @@ int build_ntfy_readings(char *out, int size, const char *topic, const char *titl
 // TDS 617 mg/L (normal 210)
 // Turbidity 18.2 NTU (normal 8.2)
 // Water temp 17.4 °C (normal 17.1)
+// (sensors this node doesn't have are left out)
 void add_reading_lines(struct Text_out *t, struct Node_report report) {
-    add_reading(t, "pH", report.now[S_PH], report.now_valid[S_PH], report.base[S_PH],
-                report.base_valid[S_PH], 2, "");
-    add_reading(t, "TDS", report.now[S_TDS], report.now_valid[S_TDS], report.base[S_TDS],
-                report.base_valid[S_TDS], 0, " mg/L");
-    add_reading(t, "Turbidity", report.now[S_NTU], report.now_valid[S_NTU], report.base[S_NTU],
-                report.base_valid[S_NTU], 1, " NTU");
-    add_reading(t, "Water temp", report.now[S_TEMP], report.now_valid[S_TEMP], report.base[S_TEMP],
-                report.base_valid[S_TEMP], 1, " \xC2\xB0" "C");
+    if (report.fitted[S_PH]) {
+        add_reading(t, "pH", report.now[S_PH], report.now_valid[S_PH], report.base[S_PH],
+                    report.base_valid[S_PH], 2, "");
+    }
+    if (report.fitted[S_TDS]) {
+        add_reading(t, "TDS", report.now[S_TDS], report.now_valid[S_TDS], report.base[S_TDS],
+                    report.base_valid[S_TDS], 0, " mg/L");
+    }
+    if (report.fitted[S_NTU]) {
+        add_reading(t, "Turbidity", report.now[S_NTU], report.now_valid[S_NTU], report.base[S_NTU],
+                    report.base_valid[S_NTU], 1, " NTU");
+    }
+    if (report.fitted[S_TEMP]) {
+        add_reading(t, "Water temp", report.now[S_TEMP], report.now_valid[S_TEMP], report.base[S_TEMP],
+                    report.base_valid[S_TEMP], 1, " \xC2\xB0" "C");
+    }
 }
 
 void add_reading(struct Text_out *t, const char *name, float now, bool now_ok, float base,
@@ -511,8 +526,10 @@ void add_speed(struct Text_out *t, struct Speed_estimate estimate, unsigned long
     add_string(t, estimate.from_id);
     add_format(t, ",\"to\":");
     add_string(t, estimate.to_id);
-    add_format(t, ",\"metres\":%lu,\"minutes\":%lu,\"age_min\":%lu,\"label\":", estimate.metres,
-               estimate.minutes, now_min - estimate.found_min);
+    unsigned long minute_s = MINUTE_MS / 1000;
+    add_format(t, ",\"metres\":%lu,\"minutes\":%lu,\"age_min\":%lu,\"seconds\":%lu,\"age_s\":%lu,\"label\":",
+               estimate.metres, estimate.minutes, now_min - estimate.found_min,
+               estimate.minutes * minute_s, (now_min - estimate.found_min) * minute_s);
     add_string(t, get_label_info(estimate.label).name);
     add_format(t, "}");
 }
@@ -529,6 +546,17 @@ const char *category_word(enum Category category) {
     } else {
         return "NONE";
     }
+}
+
+// Bit s set = the node has sensor s (pH 1, TDS 2, turbidity 4, temp 8)
+int fitted_bits(struct Node_report report) {
+    int bits = 0;
+    for (int s = 0; s < S_COUNT; s++) {
+        if (report.fitted[s]) {
+            bits |= 1 << s;
+        }
+    }
+    return bits;
 }
 
 const char *json_bool(bool value) {

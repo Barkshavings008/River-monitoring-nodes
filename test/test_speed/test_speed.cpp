@@ -11,6 +11,9 @@ struct Speed_estimate found[4];
 struct Node_report make_report(enum Label_id label) {
     struct Node_report report;
     memset(&report, 0, sizeof(struct Node_report));
+    for (int s = 0; s < S_COUNT; s++) {
+        report.fitted[s] = true;
+    }
     report.label = label;
     if (label == LBL_NONE) {
         report.state = ST_NORMAL;
@@ -151,6 +154,15 @@ void test_across_a_stream_join(void) {
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, found[0].metres_per_sec);
 }
 
+// Sediment at a full node, then a turbidity spike at a turbidity-only node
+// further down, is the same mud travelling
+void test_turbidity_node_pairs_with_sediment(void) {
+    run_minute(1, LBL_NONE, LBL_NONE, LBL_NONE, LBL_NONE);
+    run_minute(10, LBL_SEDIMENT, LBL_NONE, LBL_NONE, LBL_NONE);
+    TEST_ASSERT_EQUAL(1, run_minute(30, LBL_SEDIMENT, LBL_TURBIDITY, LBL_NONE, LBL_NONE));
+    TEST_ASSERT_EQUAL_UINT32(1000, found[0].metres);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_plume_travelling_down_gives_speed);
@@ -161,5 +173,6 @@ int main(void) {
     RUN_TEST(test_only_fresh_arrivals_count);
     RUN_TEST(test_each_report_only_looked_at_once);
     RUN_TEST(test_across_a_stream_join);
+    RUN_TEST(test_turbidity_node_pairs_with_sediment);
     return UNITY_END();
 }

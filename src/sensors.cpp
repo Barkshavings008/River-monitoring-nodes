@@ -16,19 +16,24 @@ float read_volts(int pin, float divider_ratio);
 
 void wake_up_sensors(void) {
     analogReadResolution(12); // default 11 dB attenuation reads about 0 - 3.1 V
-    temp_sensor.begin();
-    temp_sensor.setResolution(12);
-    temp_sensor.setWaitForConversion(false); // don't wait, read the result on the next 2 s tick
-    temp_sensor.requestTemperatures();
+    if (HAS_TEMP) {
+        temp_sensor.begin();
+        temp_sensor.setResolution(12);
+        temp_sensor.setWaitForConversion(false); // don't wait, read the result on the next 2 s tick
+        temp_sensor.requestTemperatures();
+    }
 }
 
 // One 2 s sample, turned into real units and temperature corrected
 struct Reading read_sensors(void) {
     struct Reading reading;
 
-    float temp = temp_sensor.getTempCByIndex(0); // result of the last request
-    temp_sensor.requestTemperatures();
-    bool temp_valid = temperature_valid(temp);
+    float temp = TEMP_DISCONNECTED_C;
+    if (HAS_TEMP) {
+        temp = temp_sensor.getTempCByIndex(0); // result of the last request
+        temp_sensor.requestTemperatures();
+    }
+    bool temp_valid = HAS_TEMP && temperature_valid(temp);
     reading.value[S_TEMP] = temp;
     reading.valid[S_TEMP] = temp_valid;
     float correction_temp = compensation_temp(temp, temp_valid);
@@ -41,9 +46,9 @@ struct Reading read_sensors(void) {
     reading.value[S_PH] = ph_from_voltage(last_volts.ph, correction_temp);
     reading.value[S_TDS] = tds_from_voltage(last_volts.tds, correction_temp);
     reading.value[S_NTU] = ntu_from_voltage(last_volts.turbidity);
-    reading.valid[S_PH] = true;
-    reading.valid[S_TDS] = true;
-    reading.valid[S_NTU] = true;
+    reading.valid[S_PH] = HAS_PH;
+    reading.valid[S_TDS] = HAS_TDS;
+    reading.valid[S_NTU] = HAS_NTU;
     return reading;
 }
 

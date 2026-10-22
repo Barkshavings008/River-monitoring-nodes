@@ -1,5 +1,7 @@
 #include "labels.h"
 
+bool watch_as_alert = DEMO_ALERTS;
+
 // Fills in the text for label id (anything unknown gets the "No pattern" text)
 struct Label_info get_label_info(enum Label_id id) {
     struct Label_info info;
@@ -74,6 +76,15 @@ struct Label_info get_label_info(enum Label_id id) {
                           "detergent and medicine residues";
         info.meaning = "Clear water carrying extra dissolved salts and a slightly lower pH: treated "
                        "sewage or fertiliser washing in. Can feed algae if it keeps up.";
+    } else if (id == LBL_TURBIDITY) {
+        info.code = "TURBIDITY_RISE";
+        info.name = "Turbidity spike (only turbidity measured here)";
+        info.short_name = "Turbidity spike";
+        info.category = CAT_WATCH;
+        info.pollutants = "Most likely mud or sediment; could also be sewage or other cloudy waste "
+                          "(this node can't measure pH or dissolved salts)";
+        info.meaning = "The water is much cloudier than normal. See what the nodes with all four "
+                       "sensors found.";
     } else if (id == LBL_RAIN) {
         info.code = "LIKELY_RAIN_EVENT";
         info.name = "Likely rain / stormwater event";
@@ -98,5 +109,22 @@ struct Label_info get_label_info(enum Label_id id) {
         info.meaning = "";
     }
 
+    // For demos: watch labels (salt, sediment, warm water...) show as full alerts
+    info.base_category = info.category;
+    if (watch_as_alert && info.category == CAT_WATCH) {
+        info.category = CAT_POLLUTION;
+    }
     return info;
+}
+
+// true if two nodes are probably seeing the same thing. A node that only
+// measures turbidity can't name the cause, so its "turbidity spike" matches
+// the muddy-water labels of nodes with all four sensors (sediment, sewage).
+bool labels_match(enum Label_id a, enum Label_id b) {
+    if (a == b) {
+        return true;
+    }
+    bool a_muddy = a == LBL_TURBIDITY || a == LBL_SEDIMENT || a == LBL_SEWAGE;
+    bool b_muddy = b == LBL_TURBIDITY || b == LBL_SEDIMENT || b == LBL_SEWAGE;
+    return a_muddy && b_muddy && (a == LBL_TURBIDITY || b == LBL_TURBIDITY);
 }
