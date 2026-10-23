@@ -80,7 +80,19 @@ struct Network_assessment {
     int siblings_alerting;
     int peers;               // fresh nodes anywhere (not counting this one)
     int rain_peers;
+    // For a node that only measures turbidity: a node with all four sensors
+    // that has named a muddy-water cause (sediment, sewage or rain)
+    bool has_cause;
+    char cause_id[NODE_ID_LEN];
+    enum Label_id cause_label;
+    int cause_where;         // CAUSE_UPSTREAM, CAUSE_SAME_SPOT, CAUSE_DOWNSTREAM or CAUSE_ELSEWHERE
+    long cause_gap_m;        // river distance between the two nodes (-1 if not on the same water)
 };
+
+#define CAUSE_UPSTREAM 1
+#define CAUSE_SAME_SPOT 2
+#define CAUSE_DOWNSTREAM 3
+#define CAUSE_ELSEWHERE 4
 
 ////////////////////////
 // Function prototypes//

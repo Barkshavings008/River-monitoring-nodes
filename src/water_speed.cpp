@@ -142,7 +142,7 @@ bool pair_with_upstream(struct Speed_tracker *tracker, struct River_network *net
     long best_metres = 0;
     for (int d = 0; d < tracker->num_detections; d++) {
         struct Plume_detection *det = &tracker->detections[d];
-        if (det->label != label || det->minute >= now_min ||
+        if (!labels_match(det->label, label) || det->minute >= now_min ||
             now_min - det->minute > SPEED_PAIR_WINDOW_MIN) {
             continue;
         }
@@ -169,7 +169,8 @@ bool pair_with_upstream(struct Speed_tracker *tracker, struct River_network *net
     }
 
     unsigned long minutes = now_min - tracker->detections[best].minute;
-    float speed = (float)best_metres / (float)(minutes * 60);
+    // (a "minute" is MINUTE_MS long: 10 s in demo mode)
+    float speed = (float)best_metres / ((float)minutes * (float)MINUTE_MS / 1000.0f);
     if (speed > SPEED_MAX_MPS) {
         return false;
     }

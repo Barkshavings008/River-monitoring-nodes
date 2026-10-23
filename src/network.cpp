@@ -1,4 +1,5 @@
 #include "network.h"
+#include "labels.h"
 #include <string.h>
 
 #define FAR_DOWNSTREAM 0xFFFFFFFFUL // "below every node" when searching a whole stream
@@ -13,6 +14,9 @@ int branch_depth(struct River_network *network, int branch);
 bool same_position(struct River_node *a, struct River_node *b);
 void find_upstream_nodes(struct River_network *network, int branch, unsigned long below_m,
     unsigned long now_min, int found[], int *num_found, int depth);
+void find_turbidity_cause(struct River_network *network, int local_index, unsigned long now_min,
+    struct Network_assessment *a);
+enum Label_id muddy_label(struct Node_report report);
 ////////////////////////
 
 void network_clear(struct River_network *network) {
@@ -318,7 +322,7 @@ struct Network_assessment network_assess(struct River_network *network, const ch
     int chosen = -1;
     for (int k = 0; k < num_upstream; k++) {
         struct Node_report *r = &network->nodes[upstream[k]].report;
-        if (r->state == ST_ALERT && r->label == local->report.label) {
+        if (r->state == ST_ALERT && labels_match(r->label, local->report.label)) {
             if (!upstream_same || upstream[k] > chosen) {
                 chosen = upstream[k];
             }
@@ -343,6 +347,10 @@ struct Network_assessment network_assess(struct River_network *network, const ch
             strncat(a.upstream_list, network->nodes[upstream[k]].id,
                     UPSTREAM_LIST_LEN - strlen(a.upstream_list) - 1);
         }
+    }
+
+    if (report_has_label(local->report, LBL_TURBIDITY)) {
+        find_turbidity_cause(network, local_index, now_min, &a);
     }
 
     bool local_rain = local->report.rain_pattern || report_has_label(local->report, LBL_RAIN);
@@ -376,6 +384,63 @@ struct Network_assessment network_assess(struct River_network *network, const ch
 /////////////////////////
 // Function definitions//
 /////////////////////////
+
+// A node that only measures turbidity can't tell mud from sewage, so it
+// borrows the answer from a node with all four sensors that has named a
+// muddy-water cause. The nearest one upstream is best (the same water
+// reached it first), then one at the same spot, then the nearest downstream,
+// then any other.
+void find_turbidity_cause(struct River_network *network, int local_index, unsigned long now_min,
+    struct Network_assessment *a) {
+    int best = -1;
+    int best_where = 0;
+    long best_gap = -1;
+    for (int i = 0; i < network->num_nodes; i++) {
+        struct River_node *node = &network->nodes[i];
+        if (i == local_index || !node_is_fresh(node, now_min) || muddy_label(node->report) == LBL_NONE) {
+            continue;
+        }
+        long up_gap = network_river_distance(network, i, local_index);     // node is upstream
+        long down_gap = network_river_distance(network, local_index, i);   // node is downstream
+        int where = CAUSE_ELSEWHERE;
+        long gap = -1;
+        if (up_gap == 0 || down_gap == 0) {
+            where = CAUSE_SAME_SPOT;
+            gap = 0;
+        } else if (up_gap > 0) {
+            where = CAUSE_UPSTREAM;
+            gap = up_gap;
+        } else if (down_gap > 0) {
+            where = CAUSE_DOWNSTREAM;
+            gap = down_gap;
+        }
+        bool better = best < 0 || where < best_where || (where == best_where && gap >= 0 && gap < best_gap);
+        if (better) {
+            best = i;
+            best_where = where;
+            best_gap = gap;
+        }
+    }
+    if (best < 0) {
+        return;
+    }
+    a->has_cause = true;
+    copy_string(a->cause_id, network->nodes[best].id, NODE_ID_LEN);
+    a->cause_label = muddy_label(network->nodes[best].report);
+    a->cause_where = best_where;
+    a->cause_gap_m = best_gap;
+}
+
+// The muddy-water label a node has on (sediment, sewage or rain), or LBL_NONE
+enum Label_id muddy_label(struct Node_report report) {
+    enum Label_id labels[3] = { LBL_SEDIMENT, LBL_SEWAGE, LBL_RAIN };
+    for (int k = 0; k < 3; k++) {
+        if (report_has_label(report, labels[k])) {
+            return labels[k];
+        }
+    }
+    return LBL_NONE;
+}
 
 // Finds the nearest fresh nodes upstream of the spot (branch, below_m) and
 // adds their indexes to found[]. On this branch that's the closest position

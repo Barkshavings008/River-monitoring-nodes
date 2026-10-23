@@ -13,6 +13,7 @@
 #include "bluetooth.h"
 #include "wifi_alerts.h"
 #include "phone_alerts.h"
+#include "node_link.h"
 #include "alarm_servo.h"
 
 #define MAX_EVENTS 8
@@ -40,6 +41,7 @@ char phone_line[BLE_LINE_SIZE];    // one message for the phone
 void setup_river_layout(void);
 void print_wifi_banner(void);
 void check_phone(void);
+void check_node_link(void);
 void send_report_to_phone(void);
 void send_minute_to_phone(struct Alert_event events[], int num_events, struct Speed_estimate speeds[],
     int num_speeds);
@@ -51,6 +53,7 @@ void setup() {
 
     setup_river_layout();
     engine_begin(&local_engine, NODE_ID);
+    engine_set_fitted(&local_engine, HAS_PH, HAS_TDS, HAS_NTU, HAS_TEMP);
     speed_tracker_begin(&speed_tracker);
 
     // the #if actually see's the conditon and determines if your code gets compiled
@@ -62,6 +65,9 @@ void setup() {
     bluetooth_begin(NODE_ID);
 #endif
     phone_alerts_begin();   // WiFi notifications (does nothing without src/secrets.h)
+#if NODE_LINK
+    node_link_begin();      // reports to and from the other boards
+#endif
     alarm_servo_begin();
 
     print_banner(&network);
@@ -73,6 +79,7 @@ void setup() {
 void loop() {
     check_serial_commands(&network, minute_index);
     check_phone();
+    check_node_link();
     unsigned long now = millis();
 
     // Take a sample every 2 s
@@ -102,6 +109,9 @@ void loop() {
         minute_index++;
         sample_in_minute = 0;
         network_update_report(&network, NODE_ID, report, minute_index);
+#if NODE_LINK
+        node_link_send(report);
+#endif
 
         struct Speed_estimate speeds[MAX_SPEEDS];
         int num_speeds = speed_tracker_update(&speed_tracker, &network, minute_index, speeds, MAX_SPEEDS);
@@ -129,17 +139,35 @@ void loop() {
 // distance are on opposite banks at the same spot. More nodes can be added
 // while it's running with the "add" serial command.
 void setup_river_layout(void) {
+#if SIM_REMOTE_NODES
+    // Fake the other nodes, since there's only one real board
     network_add_node(&network, "N0", 0, "upstream", false);
     network_add_node(&network, NODE_ID, 1000, "left bank", true);  // this board
     network_add_node(&network, "N2", 1000, "right bank", false);
     network_add_node(&network, "N3", 2500, "downstream", false);
-
-#if SIM_REMOTE_NODES
-    // Fake the other nodes, since there's only one real board
     sim_add_node("N0", SIM_UPSTREAM);
     sim_add_node("N2", SIM_SIBLING);
     sim_add_node("N3", SIM_DOWNSTREAM);
+#else
+    // Real boards: just this one. The others add themselves when their first
+    // report arrives over the node link, at the distance they say they're at.
+    network_add_node(&network, NODE_ID, NODE_DISTANCE_M, NODE_PLACE, true);
 #endif
+}
+
+// Saves any reports heard from the other boards (adding new boards to the map)
+void check_node_link(void) {
+    uint8_t packet[sizeof(struct Node_packet)];
+    int length = 0;
+    char added[NODE_ID_LEN];
+    while (node_link_receive(packet, &length)) {
+        if (network_take_packet(&network, packet, length, NODE_ID, minute_index, added) &&
+            added[0] != '\0') {
+            char message[64];
+            snprintf(message, 64, "Node link: heard from %s, added it to the river map", added);
+            print_message(message);
+        }
+    }
 }
 
 // Says whether WiFi notifications are set up

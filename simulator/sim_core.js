@@ -74,7 +74,7 @@ class NodeCode {
 // given water quality. (Numbers match src/config.h.)
 
 const SENSOR = {
-    PH_V7: 2.50, PH_V4: 3.05,
+    PH_V7: 2.50, PH_V4: 3.05, PH_CALIBRATION_TEMP_C: 25.0,   // replaced by the board's own (useBoardCalibration)
     TDS_K: 1.0, TDS_TEMP_COEFF: 0.02, TDS_FACTOR: 0.5,
     TURB_V_CLEAR: 4.50, TURB_V_CURVE_CLEAR: 4.20,
     ADC_MAX_V: 3.1,               // the ESP32 ADC can't read above about 3.1 V
@@ -82,8 +82,19 @@ const SENSOR = {
     PH_DIVIDER: 2.2, TDS_DIVIDER: 1.0, TURB_DIVIDER: 2.2,
 };
 
-function phToVolts(ph) {
-    return SENSOR.PH_V7 + (ph - 7.0) * (SENSOR.PH_V7 - SENSOR.PH_V4) / 3.0;
+// The board scales the pH slope by temperature (kelvin), so undo that too
+function phToVolts(ph, tempC) {
+    const scale = (SENSOR.PH_CALIBRATION_TEMP_C + 273.15) / (tempC + 273.15);
+    return SENSOR.PH_V7 + (ph - 7.0) * (SENSOR.PH_V7 - SENSOR.PH_V4) / 3.0 / scale;
+}
+
+// Takes the calibration from the compiled board code (src/config.h), so the
+// page always makes the voltages the board expects
+function useBoardCalibration(code) {
+    SENSOR.PH_V7 = code.setting(6);
+    SENSOR.PH_V4 = code.setting(7);
+    SENSOR.PH_CALIBRATION_TEMP_C = code.setting(8);
+    SENSOR.TURB_V_CLEAR = code.setting(9);
 }
 
 function tdsToVolts(tds, tempC) {
@@ -418,6 +429,7 @@ const FAULTS = {
 class Simulation {
     constructor(code, layout) {
         this.code = code;
+        useBoardCalibration(code);
         this.layout = layout || defaultLayout();
         this.random = mulberry32(1234);
         this.reset();
@@ -574,7 +586,7 @@ class Simulation {
                 const temp = w.temp + this.noise(0.02);
                 const tds = w.tds * (1 + this.noise(0.004));
                 const ntu = w.ntu * (1 + this.noise(0.02)) + this.noise(0.2);
-                let phV = phToVolts(ph) + this.noise(0.001);
+                let phV = phToVolts(ph, temp) + this.noise(0.001);
                 let tempReading = temp;
                 if (node.fault === "temp") tempReading = -127;
                 if (node.fault === "ph_broken") phV = 5.6;

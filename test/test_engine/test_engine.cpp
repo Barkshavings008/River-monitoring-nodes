@@ -100,6 +100,40 @@ void test_ph_range_starts_after_warm_up(void) {
     }
 }
 
+// A node with only a turbidity sensor: the missing sensors aren't faults,
+// and muddy water gives a turbidity spike alert
+void test_turbidity_only_engine(void) {
+    engine_begin(&engine, "N2");
+    engine_set_fitted(&engine, false, false, true, false);
+    struct Node_report report;
+    struct Alert_event events[MAX_TEST_EVENTS];
+    bool saw_turbidity = false;
+    for (unsigned long m = 0; m < BASELINE_MIN_MINUTES + 10; m++) {
+        for (int k = 0; k < SIM_SAMPLES_PER_MIN; k++) {
+            struct Reading r = sim_reading(SIM_LOCAL, 0, k);
+            if (m >= BASELINE_MIN_MINUTES + 2) {
+                r.value[S_NTU] = 150.0f;   // muddy
+            }
+            engine_add_sample(&engine, r);
+        }
+        int n = engine_close_minute(&engine, m * 60, &report, events, MAX_TEST_EVENTS);
+        if (m == BASELINE_MIN_MINUTES) {
+            TEST_ASSERT_EQUAL(ST_NORMAL, report.state);   // not FAULT
+        }
+        for (int i = 0; i < n; i++) {
+            if (events[i].id == LBL_TURBIDITY && events[i].on) {
+                saw_turbidity = true;
+            }
+        }
+    }
+    TEST_ASSERT_TRUE(saw_turbidity);
+    TEST_ASSERT_FALSE(report.fitted[S_PH]);
+    TEST_ASSERT_TRUE(report.fitted[S_NTU]);
+    TEST_ASSERT_FALSE(report.now_valid[S_PH]);
+    TEST_ASSERT_EQUAL(F_NONE, report.fault[S_PH]);
+    TEST_ASSERT_EQUAL(F_NONE, report.fault[S_TEMP]);
+}
+
 void test_persistence_needs_three_minutes_on_five_off(void) {
     struct Persistence persistence;
     persistence_reset(&persistence);
@@ -228,6 +262,7 @@ int main(void) {
     RUN_TEST(test_baseline_warmup_and_freeze);
     RUN_TEST(test_acid_spill_not_in_ph_day_range);
     RUN_TEST(test_ph_range_starts_after_warm_up);
+    RUN_TEST(test_turbidity_only_engine);
     RUN_TEST(test_persistence_needs_three_minutes_on_five_off);
     RUN_TEST(test_engine_simulated_scenario);
     RUN_TEST(test_baseline_held_after_pattern_clears);

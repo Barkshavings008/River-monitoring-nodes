@@ -302,12 +302,36 @@ void test_conversions(void) {
     // Same voltage in colder / warmer water: pH 7 doesn't move, the rest
     // scales with the Nernst slope (kelvin ratio)
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f, ph_from_voltage(PH_V7, 5.0f));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f - 3.0f * 298.15f / 278.15f, ph_from_voltage(PH_V4, 5.0f));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f - 3.0f * 298.15f / 308.15f, ph_from_voltage(PH_V4, 35.0f));
+    float cal_kelvin = PH_CALIBRATION_TEMP_C + 273.15f;
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f - 3.0f * cal_kelvin / 278.15f, ph_from_voltage(PH_V4, 5.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 7.0f - 3.0f * cal_kelvin / 308.15f, ph_from_voltage(PH_V4, 35.0f));
 
     TEST_ASSERT_TRUE(ntu_from_voltage(TURB_V_CLEAR) < 2.0f);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, TURB_MAX_NTU, ntu_from_voltage(2.0f));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, ntu_from_voltage(5.0f));
+}
+
+// A node with only a turbidity sensor: a big rise is a "turbidity spike"
+void test_turbidity_only_node(void) {
+    struct Rule_inputs in = make_inputs(7.2f, 212.0f, 120.0f, 17.1f);
+    in.ok[S_PH] = false;
+    in.ok[S_TDS] = false;
+    in.ok[S_TEMP] = false;
+    struct Rule_output out = evaluate_rules(in);
+    float confidence = 0.0f;
+    TEST_ASSERT_TRUE(has_label(out, LBL_TURBIDITY, &confidence));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.5f, confidence);   // can't rule out rain without temperature
+    TEST_ASSERT_EQUAL(1, out.num_hits);
+    // With the temperature fitted and steady, more sure
+    in.ok[S_TEMP] = true;
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, rule_turbidity_only(in).confidence);
+    // Wobble isn't a spike
+    in.now[S_NTU] = 30.0f;
+    TEST_ASSERT_EQUAL(LBL_NONE, rule_turbidity_only(in).id);
+    // A node with all four sensors uses the sediment rule instead
+    struct Rule_output full = evaluate_rules(make_inputs(7.2f, 212.0f, 120.0f, 17.1f));
+    TEST_ASSERT_TRUE(has_label(full, LBL_SEDIMENT, NULL));
+    TEST_ASSERT_FALSE(has_label(full, LBL_TURBIDITY, NULL));
 }
 
 int main(void) {
@@ -334,5 +358,6 @@ int main(void) {
     RUN_TEST(test_fault_tds_at_its_top);
     RUN_TEST(test_fault_flatline_after_60_min);
     RUN_TEST(test_conversions);
+    RUN_TEST(test_turbidity_only_node);
     return UNITY_END();
 }

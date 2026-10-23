@@ -23,7 +23,40 @@
 #define OUTPUT_MODE OUTPUT_BOTH
 #define USE_COLOUR 1         // coloured text in the serial monitor
 
-#define NODE_ID "N1"         // this board's id (see setup_river_layout() in main.cpp)
+// 1 = watch labels (salt, sediment, warm water, fertiliser, algae) show as
+// full red alerts with urgent pop-ups, which is easier to demo. 0 = they show
+// as yellow WATCH, less urgent than real pollution.
+#ifndef DEMO_ALERTS
+#define DEMO_ALERTS 1
+#endif
+
+// This board. For a network of real boards, each one gets its own id and
+// distance down the river (the platformio.ini node_... environments set
+// these for you), and the others are found over ESP-NOW (see node_link.cpp).
+#ifndef NODE_ID
+#define NODE_ID "N1"         // this board's id
+#endif
+#ifndef NODE_DISTANCE_M
+#define NODE_DISTANCE_M 1000 // metres down the river from the top
+#endif
+#ifndef NODE_PLACE
+#define NODE_PLACE "left bank"
+#endif
+
+// Which sensors this board has. A node with only a turbidity sensor uses the
+// turbidity-only rule, and borrows the cause from nodes that have all four.
+#ifndef HAS_PH
+#define HAS_PH 1
+#endif
+#ifndef HAS_TDS
+#define HAS_TDS 1
+#endif
+#ifndef HAS_NTU
+#define HAS_NTU 1
+#endif
+#ifndef HAS_TEMP
+#define HAS_TEMP 1
+#endif
 
 /////////////////////////
 ///////// PINS //////////
@@ -51,11 +84,13 @@
 /////////////////////////
 
 #define SAMPLE_INTERVAL_MS 2000
+#ifndef MINUTE_MS
 #if DEMO_MODE || (SIMULATE && SIM_FAST)
 #define MINUTE_MS 10000     // a new reading is printed every 10 s (the "minute" in the demo) (aka 6x faster than real life)
                             // change to 60000 for real-time operation
 #else
 #define MINUTE_MS 60000
+#endif
 #endif
 #define MAX_SAMPLES_PER_MIN 40
 
@@ -311,6 +346,12 @@
 #define NTFY_TOPIC ""
 #endif
 #define NTFY_SERVER "https://ntfy.sh"
+
+// Sharing reports between real boards over ESP-NOW (see node_link.cpp)
+#ifndef NODE_LINK
+#define NODE_LINK 1
+#endif
+#define ESPNOW_CHANNEL 1             // used only when the board has no WiFi set up
 #define NOTIFY_SIZE 1600             // biggest notification (JSON) sent to ntfy
 #define NOTIFY_QUEUE 6               // notifications waiting while WiFi connects
 #define NOTIFY_TRIES 3               // attempts before a notification is dropped

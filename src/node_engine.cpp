@@ -25,6 +25,18 @@ void engine_begin(struct Node_engine *engine, const char *id) {
     engine->num_tds_history = 0;
     engine->hold_minutes_left = 0;
     engine->tds_history_head = 0;
+    for (int s = 0; s < S_COUNT; s++) {
+        engine->fitted[s] = true;
+    }
+}
+
+// Which sensors this node has. A sensor that isn't fitted is left out of
+// everything, and isn't reported as broken.
+void engine_set_fitted(struct Node_engine *engine, bool ph, bool tds, bool ntu, bool temp) {
+    engine->fitted[S_PH] = ph;
+    engine->fitted[S_TDS] = tds;
+    engine->fitted[S_NTU] = ntu;
+    engine->fitted[S_TEMP] = temp;
 }
 
 // Saves one sample. Bad readings, and samples past the limit, are dropped.
@@ -47,7 +59,7 @@ int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
     float now[S_COUNT];
     bool valid[S_COUNT];
     for (int s = 0; s < S_COUNT; s++) {
-        if (engine->num_samples[s] > 0) {
+        if (engine->num_samples[s] > 0 && engine->fitted[s]) {
             valid[s] = true;
             now[s] = median_of(engine->samples[s], engine->num_samples[s]);
         } else {
@@ -59,6 +71,11 @@ int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
 
     enum Fault_code faults[S_COUNT];
     check_faults(&engine->faults, now, valid, faults);
+    for (int s = 0; s < S_COUNT; s++) {
+        if (!engine->fitted[s]) {
+            faults[s] = F_NONE;   // not fitted isn't broken
+        }
+    }
 
     struct Rule_inputs in;
     for (int s = 0; s < S_COUNT; s++) {
@@ -126,12 +143,12 @@ int engine_close_minute(struct Node_engine *engine, unsigned long uptime_sec,
     // before that there's no way to tell a spill from normal water.
     bool pollution_seen = false;
     for (int i = 0; i < out.num_hits; i++) {
-        if (get_label_info(out.hits[i].id).category == CAT_POLLUTION) {
+        if (get_label_info(out.hits[i].id).base_category == CAT_POLLUTION) {
             pollution_seen = true;
         }
     }
     for (int id = 0; id < LBL_COUNT; id++) {
-        if (engine->persistence.active[id] && get_label_info((enum Label_id)id).category == CAT_POLLUTION) {
+        if (engine->persistence.active[id] && get_label_info((enum Label_id)id).base_category == CAT_POLLUTION) {
             pollution_seen = true;
         }
     }
@@ -159,6 +176,7 @@ void build_report(struct Node_engine *engine, unsigned long uptime_sec, struct R
         report->base[s] = in.base[s];
         report->base_valid[s] = baseline_has(&engine->baseline, s);
         report->fault[s] = faults[s];
+        report->fitted[s] = engine->fitted[s];
         if (faults[s] != F_NONE) {
             any_fault = true;
         }

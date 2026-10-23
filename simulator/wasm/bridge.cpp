@@ -135,7 +135,7 @@ EXPORT("sim_add_sample") void sim_add_sample(float ph_volts, float tds_volts, fl
     float correction_temp = compensation_temp(temp_c, temp_valid);
     reading.value[S_TEMP] = temp_c;
     reading.valid[S_TEMP] = temp_valid;
-    reading.value[S_PH] = ph_from_voltage(ph_volts);
+    reading.value[S_PH] = ph_from_voltage(ph_volts, correction_temp);
     reading.value[S_TDS] = tds_from_voltage(tds_volts, correction_temp);
     reading.value[S_NTU] = ntu_from_voltage(turbidity_volts);
     reading.valid[S_PH] = true;
@@ -309,6 +309,14 @@ EXPORT("sim_setting") float sim_setting(int which) {
         return NODE_STALE_MIN;
     } else if (which == 5) {
         return LBL_COUNT;
+    } else if (which == 6) {
+        return PH_V7;            // the sensor calibration, so the page makes the
+    } else if (which == 7) {     // same voltages the real board would read
+        return PH_V4;
+    } else if (which == 8) {
+        return PH_CALIBRATION_TEMP_C;
+    } else if (which == 9) {
+        return TURB_V_CLEAR;
     } else {
         return 0;
     }

@@ -69,8 +69,11 @@ Divider wiring: sensor output → 12k → ESP32 pin → 10k → GND.
 3. In `src/config.h`:
    - `SIMULATE 1` runs on made-up readings, with no sensors needed. Set it to
      `0` for the real sensors.
-   - `DEMO_MODE 1` shortens the learning times for quick testing. Set it to
-     `0` for real use.
+   - `DEMO_MODE 1` makes every "minute" 10 seconds long, so learning normal
+     and alerts happen quickly. Set it to `0` for real use.
+   - `DEMO_ALERTS 1` turns every yellow "watch" label (salt, fertiliser,
+     warm water, etc.) into a red alert, so it sends a notification and trips
+     the alarm servo. Set it to `0` for real use.
    - Calibrate `PH_V7`, `PH_V4` and `TURB_V_CLEAR` with the `cal` command
      (see below).
    - Set the turbidity noise limits `BASE_FLOOR_NTU` and `NTU_MIN_RISE`
@@ -134,6 +137,32 @@ works (on an iPhone: Settings > Personal Hotspot > turn on "Maximise
 Compatibility"). Anyone can watch the alerts arrive without the app by
 opening `ntfy.sh/<your topic>` in a browser.
 
+## Several boards (2–3 nodes)
+
+Each board broadcasts its report every minute over **ESP-NOW**, the ESP32's
+built-in board-to-board radio. A board that hears a new node adds it to its
+river map by itself, so each board only needs to know its own name and place.
+
+Upload each board with its own PlatformIO environment (pick it in the
+environment list at the bottom of VS Code, or `pio run -e <name> -t upload`):
+
+| Environment | Name | Distance | Sensors |
+|---|---|---|---|
+| `node_N0_turbidity` | N0 | 0 m (upstream) | turbidity only |
+| `node_N1_full` | N1 | 100 m (middle) | all 4 |
+| `node_N2_turbidity` | N2 | 200 m (downstream) | turbidity only |
+
+- Every board needs the same `secrets.h` and must join the **same hotspot**,
+  because ESP-NOW only works when every board is on the same WiFi channel.
+- Every board sends its own notifications.
+- A **turbidity-only** board can't tell sediment from sewage by itself, so it
+  shows "Turbidity spike". If a nearby board with all 4 sensors found
+  sediment or sewage at the same time, it says so: "it matches N1, 100 m
+  upstream, which found Likely sediment, so it's probably the same". It also
+  pairs up with that board for the water speed.
+- For a believable water speed, pour the muddy water into the cups 30–90 s
+  apart.
+
 ### Bluetooth page (backup)
 
 The board also shows up over Bluetooth as `RiverNode-N1`. Open the phone page:
@@ -164,9 +193,10 @@ in a browser. See [simulator/README.md](simulator/README.md).
 pio test -e native
 ```
 
-71 unit tests run on a computer: the pollution rules, sensor conversions,
+81 unit tests run on a computer: the pollution rules, sensor conversions,
 fault checks, learning normal, persistence, the whole engine, the river
-network, the water speed, and the phone messages and notifications.
+network, the water speed, the phone messages and notifications, and the
+board-to-board radio packets.
 
 ## Folders
 
@@ -186,8 +216,10 @@ network, the water speed, and the phone messages and notifications.
   diluted sewage overflow is usually only caught at the node nearest it.
 - The TDS sensor tops out at about 1120 mg/L, so it can't tell brackish
   water from seawater.
-- The nodes don't talk to each other by radio yet. The other nodes are
-  simulated (`SIM_REMOTE_NODES` in `config.h`).
+- ESP-NOW reaches about 100–200 m in the open. A long river would need
+  LoRa radio instead.
+- A turbidity-only node can only guess the cause by borrowing it from a
+  board with all 4 sensors, and can't run the rain check.
 - The water speed is only known after a pollution plume has passed two nodes.
 - WiFi notifications need WiFi with internet. Rivers rarely have WiFi, so a
   real deployment would use LoRa radio or a mobile (cellular) connection.

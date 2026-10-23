@@ -4,6 +4,7 @@
 #include <string.h>
 #include "phone_messages.h"
 #include "phone_alerts.h"
+#include "labels.h"
 
 struct River_network network;
 struct Speed_tracker tracker;
@@ -12,6 +13,9 @@ char line[BLE_LINE_SIZE];
 struct Node_report make_report(const char *id, enum Label_id label) {
     struct Node_report report;
     memset(&report, 0, sizeof(struct Node_report));
+    for (int s = 0; s < S_COUNT; s++) {
+        report.fitted[s] = true;
+    }
     strcpy(report.id, id);
     report.label = label;
     report.state = ST_NORMAL;
@@ -247,6 +251,25 @@ void test_fault_watch_waits_and_reports_once(void) {
     TEST_ASSERT_EQUAL(S_COUNT, sensors[1]);
 }
 
+// With DEMO_ALERTS on, a watch label (warm water) shows as a full alert
+void test_demo_alerts_switch(void) {
+    struct Node_report report = make_report("N1", LBL_THERMAL);
+    struct Network_assessment a = network_assess(&network, "N1", 5);
+    struct Alert_event event;
+    event.id = LBL_THERMAL;
+    event.on = true;
+    event.confidence = 1.0f;
+    char out[NOTIFY_SIZE];
+    watch_as_alert = true;
+    TEST_ASSERT_EQUAL(CAT_POLLUTION, get_label_info(LBL_THERMAL).category);
+    TEST_ASSERT_EQUAL(CAT_WATCH, get_label_info(LBL_THERMAL).base_category);
+    build_ntfy_alert(out, NOTIFY_SIZE, "t", &event, 1, report, a, &tracker, 5);
+    watch_as_alert = false;
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"title\":\"POLLUTION ALERT at N1\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"priority\":5"));
+    TEST_ASSERT_EQUAL(CAT_WATCH, get_label_info(LBL_THERMAL).category);
+}
+
 void test_status_has_wifi_and_armed(void) {
     struct Node_report report = make_report("N1", LBL_NONE);
     struct Network_assessment a = network_assess(&network, "N1", 5);
@@ -269,5 +292,6 @@ int main(void) {
     RUN_TEST(test_ntfy_fault_message);
     RUN_TEST(test_fault_watch_waits_and_reports_once);
     RUN_TEST(test_status_has_wifi_and_armed);
+    RUN_TEST(test_demo_alerts_switch);
     return UNITY_END();
 }

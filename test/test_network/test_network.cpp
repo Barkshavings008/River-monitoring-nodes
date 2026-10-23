@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "network.h"
+#include "labels.h"
+#include "report_text.h"
 
 struct River_network network;
 
@@ -10,6 +12,9 @@ struct River_network network;
 struct Node_report make_report(enum Node_state state, enum Label_id label, bool rain) {
     struct Node_report report;
     memset(&report, 0, sizeof(struct Node_report));
+    for (int s = 0; s < S_COUNT; s++) {
+        report.fitted[s] = true;
+    }
     report.state = state;
     report.label = label;
     report.rain_pattern = rain;
@@ -265,6 +270,46 @@ void test_move_node_to_other_branch(void) {
     TEST_ASSERT_FALSE(network_move_node_to_branch(&network, "M2", "nowhere", 100));
 }
 
+// A turbidity-only node borrows the cause from a node with all four sensors:
+// upstream first, and "same pattern upstream" counts sediment as a match
+void test_turbidity_node_borrows_cause(void) {
+    char text[FINDING_TEXT_SIZE];
+    network_update_report(&network, "N0", make_report(ST_ALERT, LBL_SEDIMENT, false), 10);
+    network_update_report(&network, "N1", make_report(ST_ALERT, LBL_TURBIDITY, false), 10);
+    network_update_report(&network, "N2", make_report(ST_NORMAL, LBL_NONE, false), 10);
+    network_update_report(&network, "N3", make_report(ST_ALERT, LBL_SEWAGE, false), 10);
+    struct Network_assessment a = network_assess(&network, "N1", 10);
+    TEST_ASSERT_TRUE(a.has_cause);
+    TEST_ASSERT_EQUAL_STRING("N0", a.cause_id);          // upstream beats downstream
+    TEST_ASSERT_EQUAL(LBL_SEDIMENT, a.cause_label);
+    TEST_ASSERT_EQUAL(CAUSE_UPSTREAM, a.cause_where);
+    TEST_ASSERT_EQUAL(1000, a.cause_gap_m);
+    TEST_ASSERT_EQUAL(NF_FROM_UPSTREAM, a.finding);
+    finding_text(a, text, FINDING_TEXT_SIZE);
+    TEST_ASSERT_NOT_NULL(strstr(text, "it matches N0, 1000 m upstream, which found Likely sediment"));
+
+    // Nothing upstream named it: use the one downstream
+    network_update_report(&network, "N0", make_report(ST_NORMAL, LBL_NONE, false), 11);
+    network_update_report(&network, "N1", make_report(ST_ALERT, LBL_TURBIDITY, false), 11);
+    network_update_report(&network, "N3", make_report(ST_ALERT, LBL_SEWAGE, false), 11);
+    a = network_assess(&network, "N1", 11);
+    TEST_ASSERT_EQUAL_STRING("N3", a.cause_id);
+    TEST_ASSERT_EQUAL(CAUSE_DOWNSTREAM, a.cause_where);
+    TEST_ASSERT_EQUAL(NF_SOURCE_LOCAL_SIDE, a.finding);   // upstream N0 is normal, N2 beside it too
+
+    // A node with all four sensors never borrows a cause
+    network_update_report(&network, "N1", make_report(ST_ALERT, LBL_SEDIMENT, false), 11);
+    TEST_ASSERT_FALSE(network_assess(&network, "N1", 11).has_cause);
+}
+
+void test_label_matching(void) {
+    TEST_ASSERT_TRUE(labels_match(LBL_TURBIDITY, LBL_SEDIMENT));
+    TEST_ASSERT_TRUE(labels_match(LBL_SEWAGE, LBL_TURBIDITY));
+    TEST_ASSERT_TRUE(labels_match(LBL_SALT, LBL_SALT));
+    TEST_ASSERT_FALSE(labels_match(LBL_SEDIMENT, LBL_SEWAGE));   // the full nodes can tell these apart
+    TEST_ASSERT_FALSE(labels_match(LBL_TURBIDITY, LBL_SALT));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_sorted_insert_and_positions);
@@ -287,5 +332,7 @@ int main(void) {
     RUN_TEST(test_top_node_has_nothing_upstream);
     RUN_TEST(test_too_long_names_are_refused);
     RUN_TEST(test_move_node_to_other_branch);
+    RUN_TEST(test_turbidity_node_borrows_cause);
+    RUN_TEST(test_label_matching);
     return UNITY_END();
 }
